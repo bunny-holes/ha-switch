@@ -1,0 +1,5 @@
+{
+  "requireH1": true,
+  "fragments": [],
+  "drop": ["id", "title", "status", "owner"]
+}

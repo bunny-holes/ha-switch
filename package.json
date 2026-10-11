@@ -1,0 +1,43 @@
+{
+  "name": "@bunny-holes/ha-switch",
+  "version": "0.1.0",
+  "description": "List usage and switch Codex, Claude Code, and Antigravity CLI accounts on macOS.",
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "bin": {
+    "ha-switch": "./dist/ha-switch.js"
+  },
+  "files": [
+    "dist/ha-switch.js",
+    "README.md",
+    "README.ko.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "os": [
+    "darwin"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bunny-holes/ha-switch.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "format": "bun scripts/format.ts",
+    "check": "bun scripts/check.ts",
+    "check:types": "bun x --no-install tsc --noEmit",
+    "test": "bun test",
+    "pack:npm": "bun scripts/build.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2"
+  }
+}
