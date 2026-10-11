@@ -1,5 +1,5 @@
 {
   "name": "has",
-  "description": "List profiles and usage or switch saved Codex, Claude Code, and Antigravity CLI accounts on macOS with the has command. Use for HA Switch account tasks, not signing in to a new account.",
+  "description": "List profiles and usage, switch saved accounts, or launch Codex and Claude Code with has on macOS. Use for HA Switch account and shortcut launch tasks, not signing in to a new account.",
   "license": "MIT"
 }

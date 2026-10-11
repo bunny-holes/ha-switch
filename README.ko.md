@@ -47,6 +47,8 @@ has --version
 
 실행 명령은 `has`다. 패키지 이름은 `@bunny-holes/ha-switch`를 유지한다.
 쓸 도구의 앱 명령인 `codex`, `claude`, `agy`도 필요하다.
+공개된 v0.1.0 패키지에는 아직 `has x`와 `has c`가 없다. 다음 릴리스 전에는
+아래 개발 절의 명령으로 소스를 빌드하고 설치한다.
 
 ## ⚡ 실행
 
@@ -55,13 +57,37 @@ has --version
 ```bash
 has
 has --list
-has -h c -s 2
+has x
+has c -s 2
+has x -- resume
+has x --safe
 ```
 
 출시 버전을 설치하기 전에는 이 저장소에서 `has` 대신 `bun src/bin.ts`를 쓴다.
 
 Codex와 Claude 계정은 앱의 별도 프로필에서 미리 로그인한다.
 Antigravity는 `agy`로 각 계정에 로그인한 뒤 이름을 정해 저장한다.
+
+`has x`는 `CODEX_HOME`을 비우고 기본 `~/.codex`에서 Codex를 연다.
+`has c`는 `CLAUDE_CONFIG_DIR`을 비우고 기본 `~/.claude`에서 Claude를 연다.
+선택한 계정의 로그인을 그 기본 홈에 적용한다. 풀은 하나면 자동으로 고르고,
+여럿이면 `--pool NAME`으로 고른다. `--account N`이나 `-s N`으로 계정 하나를
+고른 뒤 실행할 수 있다. 번호를 생략하면 기본 홈의 현재 계정이 풀 안에 있을 때
+그 계정을 쓴다. 처음 쓸 때 찾지 못하면 기존 풀의 선택을 쓴다.
+둘 다 풀 안에 없으면 번호를 직접 지정한다.
+
+두 단축은 다음 앱 옵션을 하나씩 붙인다.
+
+| 단축 | 붙이는 옵션 |
+| --- | --- |
+| `has x` | `--dangerously-bypass-approvals-and-sandbox` 또는 기존 `--yolo`, `--dangerously-bypass-hook-trust` |
+| `has c` | `--dangerously-skip-permissions` |
+
+`--safe`는 풀의 인수에 있던 것까지 포함해 위 옵션을 뺀다. 앱의 권한 설정은
+그대로 적용된다. `has x --dry-run`과 `has c --dry-run`은 로그인 값을 읽거나
+바꾸지 않고 실행 인수만 보여 준다. 앱도 실행하지 않는다. `--` 뒤의 인수는
+앱에 넘긴다. `has c -s 2 -- --resume`은 2번 계정으로 바꾸고 Claude의 이어 열기
+목록을 연다.
 
 ## 🧩 에이전트 스킬 설치
 
@@ -85,13 +111,17 @@ CLI 설치와 스킬 설치는 별개다.
 
 ```bash
 has init
-has --list
+has switch --local
 ```
 
 `init`은 계정을 전환하지 않고 설정을 만든다.
-Codex는 별도 `.codex-ha-switch` 폴더를 대상으로 쓰고 원래 프로필을 유지한다.
-선택한 계정으로 Codex를 쓰려면 `has run codex`로 연다.
-Claude는 대상 프로필의 설정을 유지하고 로그인과 계정 정보만 바꾼다.
+Codex는 `has x`, Claude는 `has c`로 연다. 도구마다 기본 홈 하나를 쓴다.
+첫 기본 홈 전환 전에 `~/.codex`에 있던 원본 계정을
+`~/.config/ha-switch/codex-accounts/native/auth.json`에 따로 보관한다.
+기본 홈의 로그인 백업은 `~/.codex/auth.json.ha-switch-backup`에 둔다.
+다른 원본 프로필도 실행 대상과 분리해서 유지한다. Claude의 계정 사본은
+macOS 키체인에 두고, 기본 홈에서는 로그인과 계정 정보만 바꾼다.
+`init`은 기존 `has run codex`와 호환되도록 `.codex-ha-switch` 실행 대상도 유지한다.
 기존 toolbox의 `codex-pools.json`과 `claude-pools.json`이 있으면 그 폴더를 가져온다.
 
 ```bash
@@ -115,6 +145,58 @@ has -h a
 has -h a -s 1
 ```
 
+## 🔄 toolbox에서 옮기기
+
+toolbox 0.37.0에서 `codex-auth`와 `claude-auth`가 삭제됐다. `~/.zshenv`의
+`codex-auth` 함수가 삭제된 스크립트를 부르면 실패한다. 이를 쓰는 `codex-pkls` 등
+별칭도 함께 깨진다. 저장한 계정을 바꾸거나 앱을 열 때는 `has`를 쓴다.
+
+옛 풀 설정을 아직 가져오지 않았다면 기본 경로는 다음과 같다.
+
+```bash
+has import --from "$HOME/.config/xiyo/toolbox"
+```
+
+기존 풀 파일이 있는 경로를 쓴다. 원본과 각 풀의 `args`는 유지한다.
+이미 가져왔다면 그 설정을 그대로 쓴다.
+
+| 옛 셸 명령 | HA Switch 명령 |
+| --- | --- |
+| `codex-pkls` | `has x` |
+| `codex-pkls-N` | `has x --account N -- ARGS` 또는 `has x -s N -- ARGS` |
+| `codex-switch` | `has switch` |
+| `codex-switch NUMBER` | `has switch NUMBER` |
+| `claude-auth` 실행 함수 | `has c` 또는 `has c -s N` |
+
+`N`과 `NUMBER`에는 `has switch --local`에 나온 번호를 넣는다.
+번호는 그 풀 안에서 1부터 시작한다. `ARGS`에는 Codex에 넘길 인수를 넣는다.
+인수가 없으면 `-- ARGS`를 뺀다. 예를 들면 다음과 같다.
+
+```bash
+has x -s 2 -- resume
+has switch 2
+```
+
+두 단축도 `-c web_search=live` 같은 풀의 `args`를 유지하고, 그 뒤에 `--` 다음
+인수를 붙인다. 기존 `--yolo`가 있으면 Codex의 승인 생략 옵션으로 센다.
+훅 신뢰 생략 옵션만 없으면 더 붙인다. 옛 셸 함수에만 있던 옵션은 가져오지 않는다.
+기존 `has run`의 옵션 전달 방식은 유지한다.
+
+`has run codex --pool pkls -- resume ID`와 `has -h x --pool pkls -s N`은 계속
+설정된 `.codex-pkls` 홈을 쓴다. 그 홈의 대화를 이어 열 때는 이 경로를 쓴다.
+`has x`는 그 홈의 설정·플러그인·대화·로그인을 옮기거나 지우지 않는다.
+첫 단축 전환 뒤에는 기존 풀 명령도 따로 보관한 원본 계정을 쓴다.
+따라서 기본 홈의 계정을 갈아끼워도 각 번호가 가리키는 계정은 유지된다.
+
+단일 홈은 `~/.codex/config.toml`의 설정을 쓴다. 옛 풀 설정을 자동으로 복사하지 않는다.
+이행 확인 때 기본 홈의 추론 강도는 `low`, `pkls`는 `medium`이었다.
+켜진 `code-review`·`workbench` 플러그인도 달랐고, 신뢰 프로젝트는 126/128개,
+`hooks.state` 항목은 40/2개였다. 이는 확인한 로컬 설정의 차이이며 HA Switch의 기본값이 아니다.
+단축 실행에서 `medium`을 쓰려면 아래 예시처럼 풀의 `args`에
+`"-c", "model_reasoning_effort=medium"`을 둔다. 플러그인·프로젝트 신뢰·훅·옛 대화
+기록은 원래 홈에 남는다. `has restore`는 기본 Codex 로그인을 돌리고,
+`has restore codex --pool pkls`는 기존 풀의 로그인을 돌린다.
+
 ## 🎛️ 명령
 
 아래 명령은 `has` 다음에 쓴다.
@@ -124,20 +206,27 @@ has -h a -s 1
 | 도움말 보기 | `--help` |
 | 전체 도구·프로필·현재 선택·사용량 보기 | `--list` |
 | Codex 프로필과 사용량 보기 | `-h x` |
+| 기본 홈의 Codex 프로필과 사용량 보기 | `switch` |
 | Claude 프로필과 사용량 보기 | `-h c` |
 | 저장한 Antigravity 프로필 보기 | `-h a` |
 | 조회 요청이나 변경 없이 로컬 목록만 보기 | `--list --local` |
-| Codex를 2번 프로필로 바꾸기 | `-h x -s 2` |
+| 기본 홈의 Codex를 2번 프로필로 바꾸기 | `switch 2` |
+| 기존 Codex 풀의 실행 계정 바꾸기 | `-h x -s 2` |
 | Claude를 1번 프로필로 바꾸기 | `-h c -s 1` |
 | Antigravity를 2번 프로필로 바꾸기 | `-h a -s 2` |
 | 저장된 로그인 사본 맞추기 | `sync` |
-| Codex를 첫 전환 전 계정으로 돌리기 | `restore codex` |
+| 기본 홈의 Codex를 첫 전환 전 계정으로 돌리기 | `restore` |
+| 기존 Codex 풀의 계정 돌리기 | `restore codex` |
 | Claude를 직전 계정으로 돌리기 | `restore claude` |
 | Antigravity를 첫 전환 전 계정으로 돌리기 | `restore agy` |
 | 현재 Antigravity 로그인 저장하기 | `-c a <label>` |
-| 선택된 계정으로 Codex 이어 열기 | `run codex -- resume` |
-| 2번 계정으로 바꾸고 Codex 이어 열기 | `run codex --account 2 -- resume` |
-| 대상 프로필의 현재 계정으로 Claude 열기 | `run claude` |
+| 기본 홈에서 Codex 이어 열기 | `x -- resume` |
+| 2번 계정으로 바꾸고 Codex 이어 열기 | `x -s 2 -- resume` |
+| 기본 홈에서 Claude 열기 | `c` |
+| 계정을 바꾸고 Claude 이어 열기 | `c -s 2 -- --resume` |
+| 승인 생략 옵션 없이 단축 실행하기 | `x --safe` 또는 `c --safe` |
+| 로그인 변경 없이 실행 인수 확인하기 | `x --dry-run` 또는 `c --dry-run` |
+| 기존 풀의 실행 대상 열기 | `run codex -- resume` 또는 `run claude` |
 | 현재 계정으로 Antigravity 열기 | `run agy` |
 | 기존 프로필로 로컬 설정 만들기 | `init` |
 | 기존 설정과 Claude 저장 계정 가져오기 | `import --from <directory>` |
@@ -147,6 +236,9 @@ Claude는 `c`나 `claude`, Codex는 `x`나 `codex`, Antigravity는 `a`나 `antig
 Antigravity의 앱 명령인 `agy`도 받는다.
 프로필 번호는 `-s`나 `--switch`로 고른다.
 `has --harness claude --switch 2`는 Claude를 2번 프로필로 바꾼다.
+`has x`와 `has c`에서 `-s N`은 `--account N`의 단축이며 앱도 실행한다.
+`has -h c -s N`은 설정된 대상의 로그인만 바꾼다. 대상이 기본 `~/.claude`라면
+그 뒤 `claude`로 실행해도 바꾼 계정을 쓴다.
 도움말은 `--help`로 본다. `-h`는 하네스 선택에 쓴다.
 현재 Antigravity 로그인은 `-c`나 `--create`에 하네스와 이름을 지정해 저장한다.
 `has --create antigravity personal`은 현재 로그인을 저장하고 로그인 화면을 열지 않는다.
@@ -174,7 +266,7 @@ Codex와 Claude 계정 등록은 아직 지원하지 않는다. `has save agy <l
   "default": {
     "home": ".codex-ha-switch",
     "accounts": [".codex-personal", ".codex-work"],
-    "args": []
+    "args": ["-c", "model_reasoning_effort=medium"]
   }
 }
 ```
@@ -193,6 +285,8 @@ Codex와 Claude 계정 등록은 아직 지원하지 않는다. `has save agy <l
 
 경로는 홈 폴더를 기준으로 읽는다. 절대경로도 쓸 수 있다.
 설정 파일에는 경로와 계정 이름만 두고 인증 토큰은 넣지 않는다.
+`home`은 기존 `run`, `-h`, 도구 이름을 직접 쓰는 명령의 실행 대상이다.
+`x`와 `c`는 계정 순서·원본 경로·`args`를 유지하면서 기본 홈을 쓴다.
 
 `agy-pools.json`은 `has -c a <label>`이 만든다. `accounts`에는 저장한 계정 이름이 들어간다.
 
@@ -200,7 +294,8 @@ Codex와 Claude 계정 등록은 아직 지원하지 않는다. `has save agy <l
 
 ## ✅ 확인
 
-전환 뒤 `has -h x`, `has -h c`, `has -h a`를 실행한다. 현재 프로필에 `*`가 나온다.
+기본 Codex 홈에서 바꾼 뒤에는 `has switch --local`로 확인한다.
+설정된 풀의 대상은 `has -h x`, `has -h c`, `has -h a`로 확인한다. 현재 프로필에 `*`가 나온다.
 `has --list --local`은 네트워크 조회와 로그인 동기화를 건너뛴다.
 Codex의 일반 목록 조회는 만료된 로그인을 갱신하고 사본을 맞출 수 있다.
 Claude 목록 조회는 로그인 값을 바꾸지 않는다. 사본은 `sync claude`로 맞춘다.
@@ -239,10 +334,12 @@ Antigravity의 기본 저장 방식은
 bun install
 bun run format
 bun run check
-bun run pack:release /tmp/ha-switch-release-0.1.0
+bun scripts/build.ts /tmp/ha-switch-local.tgz
+bun add --global --ignore-scripts /tmp/ha-switch-local.tgz
 ```
 
-릴리스 빌드는 `ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, `SHA256SUMS`를 만든다.
+릴리스 파일은 `bun run pack:release /tmp/ha-switch-release-0.1.0`으로 만든다.
+결과는 `ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, `SHA256SUMS`다.
 임시 폴더에서 빌드하며, 같은 이름의 릴리스 파일이 있으면 덮어쓰지 않는다.
 `bun scripts/build.ts /tmp/ha-switch.tgz`는 CLI 패키지만 만든다.
 
@@ -251,3 +348,6 @@ bun run pack:release /tmp/ha-switch-release-0.1.0
 [^bun-add]: [Bun의 전역 설치와 tarball 설치 문서](https://bun.sh/docs/pm/cli/add).
 [^codex-skills]: [Codex 스킬 위치와 호출 방법](https://learn.chatgpt.com/docs/build-skills).
 [^claude-skills]: [Claude Code 스킬 설치와 호출 방법](https://code.claude.com/docs/en/skills).
+
+`has restore c --pool NAME`은 기본 Claude 홈을 복원합니다.
+`has restore claude --pool NAME`은 기존 풀 홈을 복원합니다.

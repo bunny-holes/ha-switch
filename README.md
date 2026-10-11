@@ -47,6 +47,8 @@ has --version
 
 The command is `has`; the package name stays `@bunny-holes/ha-switch`.
 You also need the native `codex`, `claude`, or `agy` command for the tools you use.
+The published v0.1.0 package predates `has x` and `has c`. Until the next release,
+build and install from source using the Development section below.
 
 ## ⚡ Run
 
@@ -55,13 +57,37 @@ The executable is `has`. With no options, it shows help.
 ```bash
 has
 has --list
-has -h c -s 2
+has x
+has c -s 2
+has x -- resume
+has x --safe
 ```
 
 Before installing a release, use `bun src/bin.ts` in this repository in place of `has`.
 
 Sign in with Codex and Claude accounts in their native profiles first.
 For Antigravity, save each login under a label after signing in with `agy`.
+
+`has x` starts Codex in `~/.codex`, with `CODEX_HOME` unset. `has c` starts Claude
+in `~/.claude`, with `CLAUDE_CONFIG_DIR` unset. Each shortcut applies the selected
+account to that native home. One pool is chosen automatically; several require
+`--pool NAME`. Use `--account N` or `-s N` to select one account before launch.
+Without a number, the shortcut keeps the native home's selected account when it
+is in the pool, then falls back to the existing pool selection on first use.
+If neither login is in the pool, choose an account number explicitly.
+
+The shortcuts add these native flags, once each:
+
+| Shortcut | Flags added |
+| --- | --- |
+| `has x` | `--dangerously-bypass-approvals-and-sandbox` (or an existing `--yolo`), `--dangerously-bypass-hook-trust` |
+| `has c` | `--dangerously-skip-permissions` |
+
+`--safe` removes these flags, including copies in pool arguments. Native permission
+settings still apply. `has x --dry-run` and `has c --dry-run` show the launch
+arguments without reading or writing credentials or starting the native CLI.
+Arguments after `--` go to the native CLI. For example, `has c -s 2 -- --resume`
+opens Claude's resume picker after selecting account 2.
 
 ## 🧩 Install the agent skill
 
@@ -85,13 +111,17 @@ Create configuration from the Codex and Claude profiles already on your computer
 
 ```bash
 has init
-has --list
+has switch --local
 ```
 
 `init` writes local configuration without switching accounts.
-Codex uses a separate `.codex-ha-switch` target so its source profiles stay intact.
-Start Codex with `has run codex` so it reads the selected account from that target.
-Claude keeps the target profile's settings and replaces only its login and account metadata.
+Start Codex with `has x` and Claude with `has c`. These use one native home per tool.
+Before the first native Codex switch, a source account stored in `~/.codex` is
+preserved under `~/.config/ha-switch/codex-accounts/native/auth.json`.
+The native home's login backup remains `~/.codex/auth.json.ha-switch-backup`.
+Other source profiles stay separate from the target. Claude keeps saved accounts
+in the macOS keychain and replaces only login and account metadata in the native home.
+`init` retains a `.codex-ha-switch` target for the compatible `has run codex` path.
 If you already have pool configuration from toolbox, import that directory:
 
 ```bash
@@ -115,6 +145,58 @@ has -h a
 has -h a -s 1
 ```
 
+## 🔄 Move from toolbox
+
+Toolbox 0.37.0 removed `codex-auth` and `claude-auth`. A `codex-auth` function in
+`~/.zshenv` that calls the removed script will fail, along with `codex-pkls` and
+other aliases that use it. Use `has` for saved account switching and launches.
+
+If you have not imported your old pool configuration yet, its default location was:
+
+```bash
+has import --from "$HOME/.config/xiyo/toolbox"
+```
+
+Use the directory that holds your existing pool files. Import keeps the originals
+and preserves each pool's `args`. If you already imported them, use that configuration.
+
+| Old shell command | HA Switch command |
+| --- | --- |
+| `codex-pkls` | `has x` |
+| `codex-pkls-N` | `has x --account N -- ARGS` (or `has x -s N -- ARGS`) |
+| `codex-switch` | `has switch` |
+| `codex-switch NUMBER` | `has switch NUMBER` |
+| `claude-auth` launch wrapper | `has c` or `has c -s N` |
+
+Replace `N` or `NUMBER` with the number shown by `has switch --local`.
+Numbers start at 1 within that pool. Replace `ARGS` with native Codex arguments, or
+omit `-- ARGS` when none are needed. For example:
+
+```bash
+has x -s 2 -- resume
+has switch 2
+```
+
+Both shortcuts preserve pool `args`, such as `-c web_search=live`, before the
+arguments after `--`. Existing `--yolo` counts as Codex's approval bypass flag;
+the shortcut adds the hook trust flag if it is missing. Options kept only in an
+old shell function are not imported. `has run` keeps its existing flag behavior.
+
+Existing `has run codex --pool pkls -- resume ID` and `has -h x --pool pkls -s N`
+still use the configured `.codex-pkls` home. Keep this path to resume sessions in
+that home. `has x` does not move or delete its settings, plugins, sessions, or login.
+The first shortcut switch preserves the native source account separately; compatible
+pool commands use that saved source afterward so account numbers keep their identities.
+
+The single home uses `~/.codex/config.toml`; it does not copy the old pool's settings.
+A migration check found default reasoning effort `low` versus `medium` in `pkls`,
+different enabled `code-review`/`workbench` plugins, 126/128 trusted projects, and
+40/2 `hooks.state` entries. These are local differences, not HA Switch defaults.
+To use medium effort on shortcut launches, include `"-c", "model_reasoning_effort=medium"`
+in the pool's `args`, as shown below. Plugins, project trust, hooks, and old session
+records stay in their original homes. `has restore` restores the native Codex login;
+`has restore codex --pool pkls` restores the compatible pool login.
+
 ## 🎛️ Commands
 
 | Result | Command after `has` |
@@ -122,20 +204,27 @@ has -h a -s 1
 | Show help | `--help` |
 | Show all configured harnesses, profiles, current selections and usage | `--list` |
 | Show Codex profiles and usage | `-h x` |
+| Show native Codex profiles and usage | `switch` |
 | Show Claude profiles and usage | `-h c` |
 | Show saved Antigravity profiles | `-h a` |
 | Read local profile labels without usage requests or writes | `--list --local` |
-| Switch Codex to profile number 2 | `-h x -s 2` |
+| Switch native Codex to profile number 2 | `switch 2` |
+| Switch the compatible Codex pool target | `-h x -s 2` |
 | Switch Claude to profile number 1 | `-h c -s 1` |
 | Switch Antigravity to profile number 2 | `-h a -s 2` |
 | Synchronize saved login copies | `sync` |
-| Restore Codex's account from before its first switch | `restore codex` |
+| Restore native Codex's account from before its first switch | `restore` |
+| Restore the compatible Codex pool target | `restore codex` |
 | Restore Claude's previous account | `restore claude` |
 | Restore Antigravity's account from before its first switch | `restore agy` |
 | Save the current Antigravity login | `-c a <label>` |
-| Start Codex with the selected pool | `run codex -- resume` |
-| Select an account before starting Codex | `run codex --account 2 -- resume` |
-| Start Claude with the pool's current login | `run claude` |
+| Start Codex in the native home | `x -- resume` |
+| Select an account before starting Codex | `x -s 2 -- resume` |
+| Start Claude in the native home | `c` |
+| Select an account and resume Claude | `c -s 2 -- --resume` |
+| Start a shortcut without bypass flags | `x --safe` or `c --safe` |
+| Inspect shortcut arguments without touching logins | `x --dry-run` or `c --dry-run` |
+| Start the compatible pool target | `run codex -- resume` or `run claude` |
 | Start Antigravity with its current login | `run agy` |
 | Create local configuration from existing profiles | `init` |
 | Import existing pool configuration and Claude snapshots | `import --from <directory>` |
@@ -144,6 +233,9 @@ A harness is one of these coding tools. Use `-h` or `--harness` to choose it:
 `c` or `claude`, `x` or `codex`, and `a` or `antigravity`. The native name `agy` also works.
 Use `-s` or `--switch` to choose a profile number. For example,
 `has --harness claude --switch 2` selects Claude profile 2.
+With `has x` or `has c`, `-s N` is an alias for `--account N` and also starts the tool.
+`has -h c -s N` only switches the configured target; plain `claude` uses that login
+when the target is the default `~/.claude` home.
 Use `--help` for help; `-h` selects a harness.
 Use `-c` or `--create` with a harness and label to save the current Antigravity login:
 `has --create antigravity personal`. This option saves an existing login without starting sign-in.
@@ -172,7 +264,7 @@ Profile numbers follow account order within each pool's configuration.
   "default": {
     "home": ".codex-ha-switch",
     "accounts": [".codex-personal", ".codex-work"],
-    "args": []
+    "args": ["-c", "model_reasoning_effort=medium"]
   }
 }
 ```
@@ -191,6 +283,8 @@ Profile numbers follow account order within each pool's configuration.
 
 Paths are resolved from your home directory. Absolute paths also work.
 Pool configuration stores paths and labels, never login tokens.
+`home` remains the target for compatible `run`, `-h`, and explicit host commands.
+`x` and `c` use the native home while keeping account order, source paths, and `args`.
 
 `agy-pools.json` is created by `has -c a <label>`. Its `accounts` list contains the saved labels.
 
@@ -198,7 +292,8 @@ Pool configuration stores paths and labels, never login tokens.
 
 ## ✅ Check the result
 
-Run `has -h x`, `has -h c`, or `has -h a` after switching. `*` marks the current profile.
+Run `has switch --local` after a native Codex switch. For configured pool targets,
+use `has -h x`, `has -h c`, or `has -h a`. `*` marks the current profile.
 `has --list --local` skips network requests and login synchronization.
 Normal Codex listing can refresh expired logins and synchronize their saved copies.
 Claude listing reads logins without changing them. Use `sync claude` to synchronize saved copies,
@@ -239,10 +334,12 @@ The skill archive contains `has/SKILL.md`, its UI metadata, and the license.
 bun install
 bun run format
 bun run check
-bun run pack:release /tmp/ha-switch-release-0.1.0
+bun scripts/build.ts /tmp/ha-switch-local.tgz
+bun add --global --ignore-scripts /tmp/ha-switch-local.tgz
 ```
 
-The release builder writes `ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, and `SHA256SUMS`.
+For release artifacts, `bun run pack:release /tmp/ha-switch-release-0.1.0` writes
+`ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, and `SHA256SUMS`.
 It builds in temporary directories and refuses to replace existing release files.
 `bun scripts/build.ts /tmp/ha-switch.tgz` still builds only the CLI package.
 
@@ -251,3 +348,6 @@ It builds in temporary directories and refuses to replace existing release files
 [^bun-add]: [Bun's global and tarball installation documentation](https://bun.sh/docs/pm/cli/add).
 [^codex-skills]: [Codex skill directories and invocation](https://learn.chatgpt.com/docs/build-skills).
 [^claude-skills]: [Claude Code skill installation and invocation](https://code.claude.com/docs/en/skills).
+
+`has restore c --pool NAME` restores the shortcut Claude home.
+`has restore claude --pool NAME` keeps restoring the configured pool home.

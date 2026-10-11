@@ -27,15 +27,58 @@ When several pools exist, select the user's pool with `--pool NAME`.
 If the requested profile or pool is unclear, list its local profiles and ask for the missing choice.
 Verify with `has -h c --local`, using the selected tool and the same pool and configuration directory.
 Open sessions keep their loaded login.
-Codex's default pool uses a separate target directory. Launch it with `has run codex` to use the selected account.
+Use `has switch --local` to list the native Codex home and `has switch N` to select it.
+Use `has x -s N` or `has c -s N` to select an account and start the tool.
+`has -h x -s N` and `has -h c -s N` keep their switch-only meaning.
 For a custom Codex or Claude target, use `has run codex` or `has run claude` with the same pool and configuration directory.
+
+## Replace toolbox commands
+
+Toolbox 0.37.0 removed `codex-auth` and `claude-auth`. A `codex-auth` function in
+`~/.zshenv` that calls the removed script will fail, along with `codex-pkls` and
+other aliases that use it. Use the installed `has` command for these account tasks.
+Edit `~/.zshenv` only when the user explicitly requests that change.
+
+On an explicit migration request, import the user's chosen pool directory with
+`has import --from DIRECTORY`. The old default was `~/.config/xiyo/toolbox/`.
+If it is already imported, use the existing HA Switch configuration.
+
+| Old shell command | HA Switch command |
+| --- | --- |
+| `codex-pkls` | `has x` |
+| `codex-pkls-N` | `has x -s N -- ARGS` |
+| `codex-switch NUMBER` | `has switch NUMBER` |
+
+Resolve `N` or `NUMBER` from `has switch --local`, using the same pool and
+configuration directory. Numbers start at 1. If several pools exist, use `--pool NAME`.
+`has c -s N` follows the same selection and launch rule for Claude.
+
+`has x` uses `~/.codex` with `CODEX_HOME` unset. `has c` uses `~/.claude` with
+`CLAUDE_CONFIG_DIR` unset. They use the native home's settings, plugins, MCP
+credentials, and history. They do not copy configuration from a pool home.
+
+Shortcuts add Codex's `--dangerously-bypass-approvals-and-sandbox` and
+`--dangerously-bypass-hook-trust`, or Claude's `--dangerously-skip-permissions`.
+An existing Codex `--yolo` counts as the approval flag. Managed flags are not duplicated.
+Use `--safe` to remove these flags from pool and forwarded arguments; native
+permission settings still apply. Native arguments after their own `--` stay literal.
+Use `has x --dry-run` or `has c --dry-run` to inspect arguments without credential
+reads or writes. Launch only when the user requests it.
+
+Import preserves pool `args`, which precede arguments forwarded after `--`.
+Options kept only in old shell functions are not imported.
+
+For an old pkls session, keep `has run codex --pool pkls -- resume ID`.
+That compatible command keeps the pool home and arguments without adding shortcut
+flags. `has -h x --pool pkls -s N` still switches only the pkls target.
+Session records stay in their original homes; shortcuts do not move them.
 
 ## Setup and recovery
 
 - On an explicit setup request, use `has init` to discover existing Codex and Claude profiles without switching accounts.
 - Import an explicitly chosen configuration directory with `has import --from DIRECTORY`.
 - Save the current Antigravity login with `has -c a LABEL` or `has --create antigravity LABEL` only when the user asks to save it. This saves an existing login; it does not start sign-in. Codex and Claude registration is not supported.
-- Use `has restore codex`, `has restore claude`, or `has restore agy` when the user asks to restore a saved login.
+- Use `has restore` for the native Codex home, or `has restore codex`, `has restore claude`, or `has restore agy` when the user asks to restore a saved login.
 - Use `has sync` only when synchronization is part of the request; it can write saved login copies.
 - Report a CLI failure by its safe error code. Do not repair it by editing native login files, reading keychain secrets, or changing unrelated settings.
 
@@ -44,3 +87,6 @@ Configuration stays under `~/.config/ha-switch/` unless the user selects another
 The skill has no marketplace, toolbox, or MCP dependency.
 
 [^install]: [HA Switch installation guide](https://github.com/bunny-holes/ha-switch#install-cli).
+
+`has restore c --pool NAME` restores the shortcut Claude home.
+`has restore claude --pool NAME` keeps restoring the configured pool home.
