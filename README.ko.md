@@ -7,17 +7,42 @@ tone: 짧은 평어체로 실행할 명령을 그대로 쓴다.
 manner: 계정 전환과 데이터 위치를 먼저 설명하고 개발 정보는 뒤에 둔다.
 ---
 
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/bunny-holes/ha-switch/main/assets/ha-switch.svg" width="112" height="112" alt="HA Switch 로고: 화살표로 이어진 계정 카드 두 개">
+
 # HA Switch
 
-관리 중인 Codex·Claude Code·Antigravity CLI 프로필을 보고 번호로 계정을 바꾼다.
-HA는 Harness Account의 줄임말이다. 현재 버전은 맥을 지원한다.
+**명령 하나로 코딩 계정을 바꾼다.**
 
-[English](README.md)
+Codex · Claude Code · Antigravity CLI
 
-## CLI 설치
+[![릴리스](https://img.shields.io/github/v/release/bunny-holes/ha-switch?style=flat-square&color=65dbc9)](https://github.com/bunny-holes/ha-switch/releases/latest)
+[![검사](https://github.com/bunny-holes/ha-switch/actions/workflows/check.yml/badge.svg)](https://github.com/bunny-holes/ha-switch/actions/workflows/check.yml)
+![macOS](https://img.shields.io/badge/macOS-only-172438?style=flat-square&logo=apple&logoColor=white)
+![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.4.2-ffb083?style=flat-square&logo=bun&logoColor=172438)
+[![라이선스](https://img.shields.io/badge/license-MIT-65dbc9?style=flat-square)](LICENSE)
+
+[English](README.md) · [한국어](README.ko.md) · [다운로드](https://github.com/bunny-holes/ha-switch/releases/latest)
+
+</div>
+
+저장한 계정을 보고 번호로 바꾼다. 설정·플러그인·MCP 인증·대화 기록은 유지한다.
+HA는 Harness Account의 줄임말이다.
+
+| 도구 | 선택 옵션 | 저장한 계정 전환 | `has` 사용량 조회 |
+| --- | --- | --- | --- |
+| 🤖 Codex | `-h x` | ✅ | ✅ |
+| ✳️ Claude Code | `-h c` | ✅ | ✅ |
+| 🚀 Antigravity CLI | `-h a` | ✅ | 아직 없음 |
+
+> [!NOTE]
+> 각 도구에서 먼저 로그인한다. `has`는 저장한 계정을 바꾼다.
+> `-c`는 현재 Antigravity 로그인을 저장하며, 새 로그인 화면을 열지 않는다.
+
+## 📦 CLI 설치
 
 GitHub Releases에서 CLI 패키지와 에이전트 스킬을 따로 받는다.
-아래 명령은 `v0.1.0` 릴리스가 공개된 뒤 쓸 수 있다.
 Bun 1.4.2 이상을 설치하고 릴리스 주소로 CLI를 설치한다.[^bun-add]
 
 ```bash
@@ -30,7 +55,7 @@ has --version
 실행 명령은 `has`다. 패키지 이름은 `@bunny-holes/ha-switch`를 유지한다.
 쓸 도구의 앱 명령인 `codex`, `claude`, `agy`도 필요하다.
 
-## 실행
+## ⚡ 실행
 
 실행 명령은 `has`다. 옵션 없이 실행하면 도움말을 보여 준다.
 
@@ -45,7 +70,7 @@ has -h c -s 2
 Codex와 Claude 계정은 앱의 별도 프로필에서 미리 로그인한다.
 Antigravity는 `agy`로 각 계정에 로그인한 뒤 이름을 정해 저장한다.
 
-## 에이전트 스킬 설치
+## 🧩 에이전트 스킬 설치
 
 `has` 스킬은 설치된 CLI를 쓴다. 마켓플레이스나 MCP 서버 없이 설치할 수 있다.
 Codex는 `~/.agents/skills/`에 설치하고 `$has`로 부른다.[^codex-skills]
@@ -61,7 +86,7 @@ test ! -e "$HOME/.agents/skills/has" && tar -xzf "$has_skill_archive" -C "$HOME/
 마지막 명령은 기존 `has` 스킬을 덮어쓰지 않는다. 갱신하기로 정하기 전까지 기존 폴더를 유지한다.
 CLI 설치와 스킬 설치는 별개다.
 
-## 처음 쓰기
+## 🏁 처음 쓰기
 
 컴퓨터에 있는 Codex와 Claude 프로필로 설정을 만든 뒤 목록을 본다.
 
@@ -97,7 +122,7 @@ has -h a
 has -h a -s 1
 ```
 
-## 명령
+## 🎛️ 명령
 
 아래 명령은 `has` 다음에 쓴다.
 
@@ -141,10 +166,13 @@ Codex와 Claude 계정 등록은 아직 지원하지 않는다. `has save agy <l
 목록에는 현재 계정, 요금제, 상태, 5시간 잔량과 초기화 시각, 주간 잔량과 초기화 시각,
 남은 리셋권이 나온다. 없는 값과 조회 실패를 0으로 바꾸지 않는다. 리셋권은 소비하지 않는다.
 
-## 설정
+## ⚙️ 설정
 
 기본 위치는 `~/.config/ha-switch/`다. `HA_SWITCH_CONFIG_DIR`로 다른 위치를 지정한다.
 각 계정 묶음에 적힌 계정 순서가 프로필 번호다.
+
+<details>
+<summary>설정 파일 예시</summary>
 
 `codex-pools.json`:
 
@@ -175,7 +203,9 @@ Codex와 Claude 계정 등록은 아직 지원하지 않는다. `has save agy <l
 
 `agy-pools.json`은 `has -c a <label>`이 만든다. `accounts`에는 저장한 계정 이름이 들어간다.
 
-## 확인
+</details>
+
+## ✅ 확인
 
 전환 뒤 `has -h x`, `has -h c`, `has -h a`를 실행한다. 현재 프로필에 `*`가 나온다.
 `has --list --local`은 네트워크 조회와 로그인 동기화를 건너뛴다.
@@ -183,7 +213,7 @@ Codex의 일반 목록 조회는 만료된 로그인을 갱신하고 사본을 �
 Claude 목록 조회는 로그인 값을 바꾸지 않는다. 사본은 `sync claude`로 맞춘다.
 만료된 로그인은 Claude 앱에서 갱신한다.
 
-## 데이터와 제한
+## 🔐 데이터와 제한
 
 Codex는 앱의 `auth.json` 로그인 정보를 대상 프로필에 복사하고, 설치된 app-server로 사용량을 조회한다.
 Claude와 Antigravity는 앱이 쓰는 macOS 키체인 형식을 따른다.
@@ -203,7 +233,10 @@ Windows와 Linux 어댑터는 별도 검증이 필요하다.
 Antigravity의 기본 저장 방식은
 [공식 인증 안내](https://github.com/google-antigravity/antigravity-cli#authentication)에 설명되어 있다.
 
-## 개발
+## 🛠️ 개발
+
+<details>
+<summary>소스에서 빌드하고 검사하기</summary>
 
 소스는 TypeScript다. CLI 패키지에는 실행 파일 하나, 두 README, 패키지 정보, 라이선스만 넣는다.
 개인 프로필 데이터와 개발 의존성은 배포하지 않는다.
@@ -219,6 +252,8 @@ bun run pack:release /tmp/ha-switch-release-0.1.0
 릴리스 빌드는 `ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, `SHA256SUMS`를 만든다.
 임시 폴더에서 빌드하며, 같은 이름의 릴리스 파일이 있으면 덮어쓰지 않는다.
 `bun scripts/build.ts /tmp/ha-switch.tgz`는 CLI 패키지만 만든다.
+
+</details>
 
 [^bun-add]: [Bun의 전역 설치와 tarball 설치 문서](https://bun.sh/docs/pm/cli/add).
 [^codex-skills]: [Codex 스킬 위치와 호출 방법](https://learn.chatgpt.com/docs/build-skills).

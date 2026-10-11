@@ -7,17 +7,42 @@ tone: Plain English with short instructions and exact commands.
 manner: Explain account behavior and data boundaries before development details.
 ---
 
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/bunny-holes/ha-switch/main/assets/ha-switch.svg" width="112" height="112" alt="HA Switch logo: two account cards linked by arrows">
+
 # HA Switch
 
-List managed Codex, Claude Code, and Antigravity CLI profiles and switch their accounts
-by number. HA means Harness Account. This version supports macOS.
+**One command to switch your coding account.**
 
-[한국어](README.ko.md)
+Codex · Claude Code · Antigravity CLI
 
-## Install CLI
+[![Release](https://img.shields.io/github/v/release/bunny-holes/ha-switch?style=flat-square&color=65dbc9)](https://github.com/bunny-holes/ha-switch/releases/latest)
+[![Check](https://github.com/bunny-holes/ha-switch/actions/workflows/check.yml/badge.svg)](https://github.com/bunny-holes/ha-switch/actions/workflows/check.yml)
+![macOS](https://img.shields.io/badge/macOS-only-172438?style=flat-square&logo=apple&logoColor=white)
+![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.4.2-ffb083?style=flat-square&logo=bun&logoColor=172438)
+[![License](https://img.shields.io/badge/license-MIT-65dbc9?style=flat-square)](LICENSE)
+
+[English](README.md) · [한국어](README.ko.md) · [Downloads](https://github.com/bunny-holes/ha-switch/releases/latest)
+
+</div>
+
+List saved accounts and switch by number. Keep your settings, plugins, MCP credentials, and history.
+HA means Harness Account.
+
+| Tool | Select with | Switch saved accounts | Usage in `has` |
+| --- | --- | --- | --- |
+| 🤖 Codex | `-h x` | ✅ | ✅ |
+| ✳️ Claude Code | `-h c` | ✅ | ✅ |
+| 🚀 Antigravity CLI | `-h a` | ✅ | Not yet |
+
+> [!NOTE]
+> Sign in with each tool first. `has` switches saved accounts.
+> `-c` saves the current Antigravity login; it does not open a new sign-in.
+
+## 📦 Install CLI
 
 GitHub Releases provide the CLI package and a separate agent skill.
-These commands work after release `v0.1.0` is published.
 Install Bun 1.4.2 or later, then install the CLI package from its release URL.[^bun-add]
 
 ```bash
@@ -30,7 +55,7 @@ has --version
 The command is `has`; the package name stays `@bunny-holes/ha-switch`.
 You also need the native `codex`, `claude`, or `agy` command for the tools you use.
 
-## Run
+## ⚡ Run
 
 The executable is `has`. With no options, it shows help.
 
@@ -45,7 +70,7 @@ Before installing a release, use `bun src/bin.ts` in this repository in place of
 Sign in with Codex and Claude accounts in their native profiles first.
 For Antigravity, save each login under a label after signing in with `agy`.
 
-## Install the agent skill
+## 🧩 Install the agent skill
 
 The optional `has` skill uses the installed CLI. It needs no marketplace or MCP server.
 For Codex, install it under `~/.agents/skills/` and invoke `$has`.[^codex-skills]
@@ -61,7 +86,7 @@ test ! -e "$HOME/.agents/skills/has" && tar -xzf "$has_skill_archive" -C "$HOME/
 The last command refuses to replace an existing `has` skill. Keep that folder until you choose to update it.
 The skill is a separate download; installing the CLI does not install the skill.
 
-## First use
+## 🏁 First use
 
 Create configuration from the Codex and Claude profiles already on your computer:
 
@@ -97,7 +122,7 @@ has -h a
 has -h a -s 1
 ```
 
-## Commands
+## 🎛️ Commands
 
 | Result | Command after `has` |
 | --- | --- |
@@ -139,10 +164,13 @@ The table shows the current account, plan, status, five-hour remainder and reset
 weekly remainder and reset time, and available reset credits. Missing values stay unknown.
 A query failure stays visible in its account row. Reset credits are never consumed.
 
-## Configuration
+## ⚙️ Configuration
 
 The default directory is `~/.config/ha-switch/`. Set `HA_SWITCH_CONFIG_DIR` to change it.
 Profile numbers follow account order within each pool's configuration.
+
+<details>
+<summary>Pool configuration examples</summary>
 
 `codex-pools.json`:
 
@@ -173,7 +201,9 @@ Pool configuration stores paths and labels, never login tokens.
 
 `agy-pools.json` is created by `has -c a <label>`. Its `accounts` list contains the saved labels.
 
-## Check the result
+</details>
+
+## ✅ Check the result
 
 Run `has -h x`, `has -h c`, or `has -h a` after switching. `*` marks the current profile.
 `has --list --local` skips network requests and login synchronization.
@@ -181,7 +211,7 @@ Normal Codex listing can refresh expired logins and synchronize their saved copi
 Claude listing reads logins without changing them. Use `sync claude` to synchronize saved copies,
 and Claude itself to refresh an expired login.
 
-## Data and limits
+## 🔐 Data and limits
 
 Codex copies native `auth.json` login data into the target profile and queries usage through the
 installed app-server. Claude and Antigravity use their native macOS keychain formats. Saved logins
@@ -203,7 +233,10 @@ The adapters use the native account formats described in the
 Antigravity's native storage is described in its
 [authentication documentation](https://github.com/google-antigravity/antigravity-cli#authentication).
 
-## Development
+## 🛠️ Development
+
+<details>
+<summary>Build and validate from source</summary>
 
 Source code is TypeScript. The CLI package contains one executable, both READMEs, package metadata,
 and the license. No private profile data or development dependencies are shipped.
@@ -219,6 +252,8 @@ bun run pack:release /tmp/ha-switch-release-0.1.0
 The release builder writes `ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, and `SHA256SUMS`.
 It builds in temporary directories and refuses to replace existing release files.
 `bun scripts/build.ts /tmp/ha-switch.tgz` still builds only the CLI package.
+
+</details>
 
 [^bun-add]: [Bun's global and tarball installation documentation](https://bun.sh/docs/pm/cli/add).
 [^codex-skills]: [Codex skill directories and invocation](https://learn.chatgpt.com/docs/build-skills).
