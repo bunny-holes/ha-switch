@@ -39,7 +39,21 @@ import type { AccountListing, Pool, Pools } from "./types.ts";
 import { codexAccountUsage } from "./usage.ts";
 
 const HELP = `HA Switch ${version}
-Usage: bunx @bunny-holes/ha-switch [COMMAND]
+Usage: has [OPTIONS]
+       has <COMMAND> [ARGS...]
+
+has                          Show help
+has --list                   List managed harnesses, profiles, and current selections
+has -h c                     List Claude profiles
+has -h c -s 2                Switch Claude to profile 2
+
+--list                       List all configured harnesses or the selected harness
+-h, --harness HARNESS         c/claude, x/codex, a/antigravity (agy)
+-s, --switch NUMBER           Switch the selected harness to the shown profile number
+--help                       Show help
+--version                    Show version
+
+Commands:
 
 list [codex|claude|agy] [--pool NAME] [--local]
 switch <codex|claude|agy> [NUMBER] [--pool NAME]
@@ -50,9 +64,25 @@ run <codex|claude|agy> [--pool NAME] [--account NUMBER] [-- ARGS...]
 init
 import --from DIRECTORY
 
-Default: list all configured hosts. --local reads saved data without updates or queries.
-Common: --config-dir DIRECTORY, --help, -h, --version
+Default: show help. Selecting only a harness lists its profiles.
+--local reads saved data without updates or queries.
+Common: --config-dir DIRECTORY
 One pool is selected automatically. Use --pool when switching among several.`;
+
+const HARNESSES: Record<Host, { shortcut: string; title: string }> = {
+  codex: { shortcut: "x", title: "Codex" },
+  claude: { shortcut: "c", title: "Claude" },
+  agy: { shortcut: "a", title: "Antigravity" },
+};
+
+function hostForHarness(text: string): Host | undefined {
+  return (Object.keys(HARNESSES) as Host[]).find(
+    (host) =>
+      text === host ||
+      text === HARNESSES[host].shortcut ||
+      text === HARNESSES[host].title.toLowerCase(),
+  );
+}
 
 async function launch(host: Host, pool: Pool, args: string[], home: string): Promise<number> {
   const child = Bun.spawn([host, ...(pool.args ?? []), ...args], {
@@ -137,7 +167,7 @@ export async function main(
   const separator = argv.indexOf("--");
   const input = separator < 0 ? [...argv] : argv.slice(0, separator);
   const runArgs = separator < 0 ? [] : argv.slice(separator + 1);
-  if (input.includes("--help") || input.includes("-h")) {
+  if ((input.length === 0 && separator < 0) || input.includes("--help")) {
     print(HELP);
     return 0;
   }
@@ -176,20 +206,37 @@ export async function main(
     const positions: string[] = [];
     const options = new Map<string, string>();
     let local = false;
+    let list = false;
     for (let index = 0; index < input.length; index++) {
-      const word = input[index];
+      const inputWord = input[index];
+      const word = inputWord === "-h" ? "--harness" : inputWord === "-s" ? "--switch" : inputWord;
       if (word === "--local") {
         if (local) throw new PoolError("duplicate_option");
         local = true;
-      } else if (["--pool", "--config-dir", "--account", "--from"].includes(word)) {
+      } else if (word === "--list") {
+        if (list) throw new PoolError("duplicate_option");
+        list = true;
+      } else if (
+        ["--pool", "--config-dir", "--account", "--from", "--harness", "--switch"].includes(word)
+      ) {
         if (options.has(word)) throw new PoolError("duplicate_option");
         const value = input[++index];
-        if (!value || value.startsWith("--")) throw new PoolError("option_value_missing");
+        if (!value || value.startsWith("-")) throw new PoolError("option_value_missing");
         options.set(word, value);
       } else if (word.startsWith("-")) throw new PoolError("unknown_option");
       else positions.push(word);
     }
-    let [command = "list", hostText, number, ...extra] = positions;
+    let command = positions[0] ?? "list";
+    let hostText: string | undefined = positions[1];
+    let number: string | undefined = positions[2];
+    const extra = positions.slice(3);
+    if (list || options.has("--harness") || options.has("--switch")) {
+      if (positions.length || (list && options.has("--switch")))
+        throw new PoolError("option_not_applicable");
+      command = options.has("--switch") ? "switch" : "list";
+      hostText = options.get("--harness");
+      number = options.get("--switch");
+    }
     if (extra.length) throw new PoolError("unknown_argument");
     if (!["list", "switch", "sync", "restore", "run", "init", "import", "save"].includes(command))
       throw new PoolError("unknown_command");
@@ -224,16 +271,11 @@ export async function main(
       }
       return 0;
     }
-    if (
-      hostText !== undefined &&
-      hostText !== "codex" &&
-      hostText !== "claude" &&
-      hostText !== "agy"
-    )
-      throw new PoolError("host_invalid");
-    if (["switch", "restore", "run", "save"].includes(command) && !hostText)
+    const selectedHost = hostText === undefined ? undefined : hostForHarness(hostText);
+    if (hostText !== undefined && selectedHost === undefined) throw new PoolError("host_invalid");
+    if (["switch", "restore", "run", "save"].includes(command) && !selectedHost)
       throw new PoolError("host_required");
-    if (command === "save" && hostText !== "agy") throw new PoolError("host_not_supported");
+    if (command === "save" && selectedHost !== "agy") throw new PoolError("host_not_supported");
     if (command === "save") {
       if (!number) throw new PoolError("account_label_required");
       const previous = validateHostPools("agy", await deps.readPools(poolsPath(directory, "agy")));
@@ -251,7 +293,7 @@ export async function main(
     }
     if (command === "switch" ? !number : number !== undefined)
       throw new PoolError(command === "switch" ? "account_number_required" : "unknown_argument");
-    const hosts: Host[] = hostText ? [hostText] : ["codex", "claude", "agy"];
+    const hosts: Host[] = selectedHost ? [selectedHost] : ["codex", "claude", "agy"];
     const loaded = await Promise.all(
       hosts.map(async (host) => ({
         host,
@@ -261,7 +303,7 @@ export async function main(
     let found = false;
     for (const { host, pools } of loaded) {
       if (
-        !hostText &&
+        !selectedHost &&
         (!Object.keys(pools).length ||
           (options.has("--pool") && !Object.hasOwn(pools, options.get("--pool") as string)))
       )
@@ -299,8 +341,8 @@ export async function main(
           const configFlag = options.has("--config-dir") ? ` --config-dir ${quote(directory)}` : "";
           print(
             accountTable(pool, listing, {
-              title: `${host === "codex" ? "Codex" : host === "claude" ? "Claude" : "Antigravity"} / ${pool.name}`,
-              command: `bunx @bunny-holes/ha-switch switch ${host}${poolFlag}${configFlag}`,
+              title: `${HARNESSES[host].title} / ${pool.name}`,
+              command: `has -h ${HARNESSES[host].shortcut}${poolFlag}${configFlag} -s`,
             }),
           );
         } else if (command === "switch") {
@@ -308,7 +350,9 @@ export async function main(
           if (host === "codex") await deps.useCodex(pool, account, deps.home);
           else if (host === "claude") await deps.useClaude(pool, account, { home: deps.home });
           else await deps.useAgy(pool, account);
-          print(`${host}: account ${number} selected. Open sessions keep their current login.`);
+          print(
+            `${HARNESSES[host].title}: profile ${number} selected. Open sessions keep their current login.`,
+          );
         } else if (command === "sync") {
           if (host === "claude") await deps.syncClaude(pool, { home: deps.home });
           else if (host === "agy") await deps.syncAgy(pool);
@@ -318,9 +362,7 @@ export async function main(
           else if (host === "agy") await deps.restoreAgy(pool);
           else if (!(await deps.restoreCodex(pool, deps.home)))
             throw new PoolError("backup_missing");
-          print(
-            `${host === "codex" ? "Codex" : host === "claude" ? "Claude" : "Antigravity"}: previous login restored.`,
-          );
+          print(`${HARNESSES[host].title}: previous login restored.`);
         } else if (command === "run") {
           const selectedAccount = options.get("--account");
           if (selectedAccount) {
@@ -337,7 +379,7 @@ export async function main(
     if (!found) throw new PoolError(options.has("--pool") ? "pool_unknown" : "pool_config_missing");
     return 0;
   } catch (error) {
-    report(`ha-switch: ${errorCode(error)}`);
+    report(`has: ${errorCode(error)}`);
     return 1;
   }
 }

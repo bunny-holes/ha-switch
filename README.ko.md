@@ -9,29 +9,65 @@ manner: 계정 전환과 데이터 위치를 먼저 설명하고 개발 정보�
 
 # HA Switch
 
-현재 계정과 확인 가능한 사용량을 보고, 번호로 Codex·Claude Code·Antigravity CLI 계정을 바꾼다.
-HA는 Harness Account의 줄임말이다. 첫 버전은 맥을 지원한다.
+관리 중인 Codex·Claude Code·Antigravity CLI 프로필을 보고 번호로 계정을 바꾼다.
+HA는 Harness Account의 줄임말이다. 현재 버전은 맥을 지원한다.
 
 [English](README.md)
 
-## 실행
+## CLI 설치
+
+GitHub Releases에서 CLI 패키지와 에이전트 스킬을 따로 받는다.
+아래 명령은 `v0.1.0` 릴리스가 공개된 뒤 쓸 수 있다.
+Bun 1.4.2 이상을 설치하고 릴리스 주소로 CLI를 설치한다.[^bun-add]
 
 ```bash
-bunx @bunny-holes/ha-switch
+bun add --global --ignore-scripts https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/ha-switch-0.1.0.tgz
+export PATH="$(bun pm bin --global):$PATH"
+has --help
+has --version
 ```
 
-Bun 1.4.2 이상과 `codex`, `claude`, `agy` 중 쓸 앱의 명령이 필요하다.
+실행 명령은 `has`다. 패키지 이름은 `@bunny-holes/ha-switch`를 유지한다.
+쓸 도구의 앱 명령인 `codex`, `claude`, `agy`도 필요하다.
+
+## 실행
+
+실행 명령은 `has`다. 옵션 없이 실행하면 도움말을 보여 준다.
+
+```bash
+has
+has --list
+has -h c -s 2
+```
+
+출시 버전을 설치하기 전에는 이 저장소에서 `has` 대신 `bun src/bin.ts`를 쓴다.
+
 Codex와 Claude 계정은 앱의 별도 프로필에서 미리 로그인한다.
 Antigravity는 `agy`로 각 계정에 로그인한 뒤 이름을 정해 저장한다.
-전역 설치는 필요 없다.
+
+## 에이전트 스킬 설치
+
+`has` 스킬은 설치된 CLI를 쓴다. 마켓플레이스나 MCP 서버 없이 설치할 수 있다.
+Codex는 `~/.agents/skills/`에 설치하고 `$has`로 부른다.[^codex-skills]
+Claude Code는 대신 `~/.claude/skills/`에 설치하고 `/has`로 부른다.[^claude-skills]
+
+```bash
+has_skill_archive="$(mktemp -d)/has-skill-0.1.0.tgz"
+curl -fL https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/has-skill-0.1.0.tgz -o "$has_skill_archive"
+mkdir -p "$HOME/.agents/skills"
+test ! -e "$HOME/.agents/skills/has" && tar -xzf "$has_skill_archive" -C "$HOME/.agents/skills"
+```
+
+마지막 명령은 기존 `has` 스킬을 덮어쓰지 않는다. 갱신하기로 정하기 전까지 기존 폴더를 유지한다.
+CLI 설치와 스킬 설치는 별개다.
 
 ## 처음 쓰기
 
 컴퓨터에 있는 Codex와 Claude 프로필로 설정을 만든 뒤 목록을 본다.
 
 ```bash
-bunx @bunny-holes/ha-switch init
-bunx @bunny-holes/ha-switch list
+has init
+has --list
 ```
 
 `init`은 계정을 전환하지 않고 설정을 만든다.
@@ -40,7 +76,7 @@ Claude는 대상 프로필의 설정을 유지하고 로그인과 계정 정보�
 기존 toolbox의 `codex-pools.json`과 `claude-pools.json`이 있으면 그 폴더를 가져온다.
 
 ```bash
-bunx @bunny-holes/ha-switch import --from <directory>
+has import --from <directory>
 ```
 
 원본 설정과 키체인 항목은 유지한다. 대상 설정이 다르면 덮어쓰지 않는다.
@@ -49,32 +85,32 @@ Claude의 저장 계정은 HA Switch의 키체인 이름으로 복사한다.
 Antigravity 계정에 로그인한 상태에서 한 번 저장한다.
 
 ```bash
-bunx @bunny-holes/ha-switch save agy personal
+has save agy personal
 ```
 
 `agy`에서 다른 계정으로 로그인한 뒤 다른 이름으로 저장한다.
 
 ```bash
-bunx @bunny-holes/ha-switch save agy work
-bunx @bunny-holes/ha-switch list agy
-bunx @bunny-holes/ha-switch switch agy 1
+has save agy work
+has -h a
+has -h a -s 1
 ```
 
 ## 명령
 
-아래 명령은 `bunx @bunny-holes/ha-switch` 다음에 쓴다.
+아래 명령은 `has` 다음에 쓴다.
 
 | 할 일 | 명령 |
 | --- | --- |
-| 모든 계정과 사용량 보기 | `list` |
-| Codex 계정과 사용량 보기 | `list codex` |
-| Claude 계정과 사용량 보기 | `list claude` |
-| 저장한 Antigravity 계정 보기 | `list agy` |
-| 조회 요청이나 변경 없이 로컬 목록만 보기 | `list --local` |
-| Codex를 2번 계정으로 바꾸기 | `switch codex 2` |
-| Claude를 1번 계정으로 바꾸기 | `switch claude 1` |
-| Antigravity를 2번 계정으로 바꾸기 | `switch agy 2` |
-| 번호를 고르기 전에 목록 보기 | `switch codex` |
+| 도움말 보기 | `--help` |
+| 전체 도구·프로필·현재 선택·사용량 보기 | `--list` |
+| Codex 프로필과 사용량 보기 | `-h x` |
+| Claude 프로필과 사용량 보기 | `-h c` |
+| 저장한 Antigravity 프로필 보기 | `-h a` |
+| 조회 요청이나 변경 없이 로컬 목록만 보기 | `--list --local` |
+| Codex를 2번 프로필로 바꾸기 | `-h x -s 2` |
+| Claude를 1번 프로필로 바꾸기 | `-h c -s 1` |
+| Antigravity를 2번 프로필로 바꾸기 | `-h a -s 2` |
 | 저장된 로그인 사본 맞추기 | `sync` |
 | Codex를 첫 전환 전 계정으로 돌리기 | `restore codex` |
 | Claude를 직전 계정으로 돌리기 | `restore claude` |
@@ -87,6 +123,13 @@ bunx @bunny-holes/ha-switch switch agy 1
 | 기존 프로필로 로컬 설정 만들기 | `init` |
 | 기존 설정과 Claude 저장 계정 가져오기 | `import --from <directory>` |
 
+하네스는 여기서 다루는 코딩 도구를 뜻한다. `-h`나 `--harness`로 고른다.
+Claude는 `c`나 `claude`, Codex는 `x`나 `codex`, Antigravity는 `a`나 `antigravity`로 쓴다.
+Antigravity의 앱 명령인 `agy`도 받는다.
+프로필 번호는 `-s`나 `--switch`로 고른다.
+`has --harness claude --switch 2`는 Claude를 2번 프로필로 바꾼다.
+도움말은 `--help`로 본다. `-h`는 하네스 선택에 쓴다.
+
 같은 도구에 계정 묶음이 여럿이면 `--pool <name>`으로 고른다.
 다른 설정 폴더는 `--config-dir <directory>`로 지정한다.
 `--version`은 패키지 버전을 보여 준다.
@@ -97,7 +140,7 @@ bunx @bunny-holes/ha-switch switch agy 1
 ## 설정
 
 기본 위치는 `~/.config/ha-switch/`다. `HA_SWITCH_CONFIG_DIR`로 다른 위치를 지정한다.
-파일의 계정 순서가 전환 번호다.
+각 계정 묶음에 적힌 계정 순서가 프로필 번호다.
 
 `codex-pools.json`:
 
@@ -130,8 +173,8 @@ bunx @bunny-holes/ha-switch switch agy 1
 
 ## 확인
 
-전환 뒤 `list codex`, `list claude`, `list agy`를 실행한다. 현재 계정에 체크 표시가 나온다.
-`list --local`은 네트워크 조회와 로그인 동기화를 건너뛴다.
+전환 뒤 `has -h x`, `has -h c`, `has -h a`를 실행한다. 현재 프로필에 `*`가 나온다.
+`has --list --local`은 네트워크 조회와 로그인 동기화를 건너뛴다.
 Codex의 일반 목록 조회는 만료된 로그인을 갱신하고 사본을 맞출 수 있다.
 Claude 목록 조회는 로그인 값을 바꾸지 않는다. 사본은 `sync claude`로 맞춘다.
 만료된 로그인은 Claude 앱에서 갱신한다.
@@ -158,12 +201,21 @@ Antigravity의 기본 저장 방식은
 
 ## 개발
 
-소스는 TypeScript다. npm에는 실행 파일 하나, 두 README, 패키지 정보, 라이선스만 넣는다.
+소스는 TypeScript다. CLI 패키지에는 실행 파일 하나, 두 README, 패키지 정보, 라이선스만 넣는다.
 개인 프로필 데이터와 개발 의존성은 배포하지 않는다.
+스킬 파일에는 `has/SKILL.md`, 화면 표시 정보, 라이선스를 넣는다.
 
 ```bash
 bun install
 bun run format
 bun run check
-bun scripts/build.ts /tmp/ha-switch.tgz
+bun run pack:release /tmp/ha-switch-release-0.1.0
 ```
+
+릴리스 빌드는 `ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, `SHA256SUMS`를 만든다.
+임시 폴더에서 빌드하며, 같은 이름의 릴리스 파일이 있으면 덮어쓰지 않는다.
+`bun scripts/build.ts /tmp/ha-switch.tgz`는 CLI 패키지만 만든다.
+
+[^bun-add]: [Bun의 전역 설치와 tarball 설치 문서](https://bun.sh/docs/pm/cli/add).
+[^codex-skills]: [Codex 스킬 위치와 호출 방법](https://learn.chatgpt.com/docs/build-skills).
+[^claude-skills]: [Claude Code 스킬 설치와 호출 방법](https://code.claude.com/docs/en/skills).

@@ -67,7 +67,7 @@ export function accountTable(
     [
       "",
       "#",
-      "account",
+      "profile",
       "plan",
       "status",
       "5-hour left",
@@ -103,7 +103,7 @@ export function accountTable(
     "",
     ...table,
     "",
-    listing.current ? "* current account" : "Current account is outside this list.",
-    `Switch: ${options.command ?? "bunx @bunny-holes/ha-switch switch"} <NUMBER>`,
+    listing.current ? "* current profile" : "Current profile is outside this list.",
+    `Switch: ${options.command ?? "has -h <HARNESS> -s"} <NUMBER>`,
   ].join("\n");
 }

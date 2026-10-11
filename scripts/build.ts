@@ -23,7 +23,7 @@ export async function pack(destination: string): Promise<string> {
     });
     if (!result.success) throw new AggregateError(result.logs, "package_build_failed");
     if (result.outputs.length !== 1) throw new Error("package_output_invalid");
-    const executable = join(stage, "dist/ha-switch.js");
+    const executable = join(stage, "dist/has.js");
     await mkdir(dirname(executable), { recursive: true });
     await Bun.write(executable, await result.outputs[0].text());
     await chmod(executable, 0o755);

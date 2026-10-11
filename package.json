@@ -5,10 +5,10 @@
   "type": "module",
   "packageManager": "bun@1.4.2",
   "bin": {
-    "ha-switch": "./dist/ha-switch.js"
+    "has": "./dist/has.js"
   },
   "files": [
-    "dist/ha-switch.js",
+    "dist/has.js",
     "README.md",
     "README.ko.md",
     "LICENSE"
@@ -33,7 +33,8 @@
     "check": "bun scripts/check.ts",
     "check:types": "bun x --no-install tsc --noEmit",
     "test": "bun test",
-    "pack:npm": "bun scripts/build.ts"
+    "pack:npm": "bun scripts/build.ts",
+    "pack:release": "bun scripts/release.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

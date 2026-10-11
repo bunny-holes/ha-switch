@@ -45,7 +45,7 @@ describe("account table", () => {
       "88%",
       "limited",
       "query failed",
-      "* current account",
+      "* current profile",
     ])
       expect(output).toContain(value);
     expect(output).toMatch(/account-a.*\s0$/m);

@@ -1,0 +1,4 @@
+interface:
+  display_name: "HA Switch"
+  short_description: "List usage and switch saved coding tool accounts"
+  default_prompt: "Use $has to show my saved coding tool profiles without changing credentials."

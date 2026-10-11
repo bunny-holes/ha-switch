@@ -60,6 +60,7 @@ test("help and version never read local state", async () => {
   f.deps.readPools = async () => {
     throw new Error("must not read");
   };
+  expect(await main([], f.deps)).toBe(0);
   expect(await main(["--help"], f.deps)).toBe(0);
   expect(await main(["--version"], f.deps)).toBe(0);
   expect(f.errors).toEqual([]);
@@ -96,14 +97,122 @@ test("explicit config directory overrides environment", async () => {
     else process.env.HA_SWITCH_CONFIG_DIR = previous;
   }
 });
-test("default lists both hosts, live Codex usage fields stay visible", async () => {
+test("--list shows configured harnesses, profiles, current selection and live usage", async () => {
   const f = fixture();
-  expect(await main([], f.deps)).toBe(0);
+  expect(await main(["--list"], f.deps)).toBe(0);
   expect(f.output.join("\n")).toContain("Codex / default");
   expect(f.output.join("\n")).toContain("Claude / default");
+  expect(f.output[0]).toContain("profile");
+  expect(f.output[0]).toContain("* current profile");
+  expect(f.output[0]).toMatch(/\*\s+1\s+account-a/m);
+  expect(f.output[0]).toContain("has -h x");
+  expect(f.output[0]).toContain("-s <NUMBER>");
   expect(f.output.join("\n")).toContain("75%");
   expect(f.events).toContain("codex-sync");
 });
+
+test("selecting a harness lists only that harness for shortcuts and full names", async () => {
+  const harnesses = [
+    ["c", "claude", "Claude"],
+    ["claude", "claude", "Claude"],
+    ["x", "codex", "Codex"],
+    ["codex", "codex", "Codex"],
+    ["a", "agy", "Antigravity"],
+    ["antigravity", "agy", "Antigravity"],
+    ["agy", "agy", "Antigravity"],
+  ] as const;
+  for (const [name, host, title] of harnesses) {
+    const f = fixture();
+    const loaded: string[] = [];
+    f.deps.readPools = async (path) => {
+      loaded.push(path?.split("/").pop() ?? "");
+      return {
+        default: {
+          home: host === "agy" ? ".gemini" : ".test-target",
+          accounts: ["account-a", "account-b"],
+        },
+      };
+    };
+    f.deps.listAgy = async () => ({ accounts: [{ account: "account-a" }] });
+    expect(await main(["-h", name, "--local"], f.deps)).toBe(0);
+    expect(loaded).toEqual([`${host}-pools.json`]);
+    expect(f.output).toHaveLength(1);
+    expect(f.output[0]).toContain(`${title} / default`);
+    expect(f.errors).toEqual([]);
+  }
+});
+
+test("short flags switch Claude to the profile number shown in the list", async () => {
+  const f = fixture();
+  f.deps.listClaude = async () => ({
+    current: "account-a",
+    accounts: [{ account: "account-b" }, { account: "account-a" }],
+  });
+  expect(await main(["--list", "-h", "c", "--local"], f.deps)).toBe(0);
+  expect(f.output[0]).toMatch(/\b2\s+account-b/m);
+  expect(await main(["-h", "c", "-s", "2"], f.deps)).toBe(0);
+  expect(f.events).toEqual(["claude-switch:account-b"]);
+  expect(f.errors).toEqual([]);
+});
+
+test("long flags switch every harness through its native adapter", async () => {
+  for (const [name, host] of [
+    ["codex", "codex"],
+    ["claude", "claude"],
+    ["antigravity", "agy"],
+  ] as const) {
+    const f = fixture();
+    f.deps.readPools = async () => ({
+      default: {
+        home: host === "agy" ? ".gemini" : ".test-target",
+        accounts: ["account-a", "account-b"],
+      },
+    });
+    f.deps.useAgy = async (_pool, account) => {
+      f.events.push(`agy-switch:${account}`);
+    };
+    expect(await main(["--harness", name, "--switch", "2"], f.deps)).toBe(0);
+    expect(f.events).toEqual([`${host}-switch:account-b`]);
+    expect(f.errors).toEqual([]);
+  }
+});
+
+test("conflicting or incomplete flags fail before reading or changing accounts", async () => {
+  const inputs = [
+    ["-h"],
+    ["-s"],
+    ["-s", "2"],
+    ["-h", "unknown", "-s", "2"],
+    ["--list", "--list"],
+    ["--list", "-h", "c", "-s", "2"],
+    ["list", "-h", "c"],
+    ["-h", "c", "--harness", "x"],
+    ["-h", "c", "-s", "1", "--switch", "2"],
+    ["-h", "c", "-s", "--list"],
+  ];
+  for (const args of inputs) {
+    const f = fixture();
+    let reads = 0;
+    f.deps.readPools = async () => {
+      reads++;
+      return {};
+    };
+    expect(await main(args, f.deps)).toBe(1);
+    expect(reads).toBe(0);
+    expect(f.events).toEqual([]);
+    expect(f.errors).toHaveLength(1);
+  }
+});
+
+test("switch flags reject invalid profile numbers without changing accounts", async () => {
+  for (const number of ["0", "3", "2.5", "label"]) {
+    const f = fixture();
+    expect(await main(["-h", "c", "-s", number], f.deps)).toBe(1);
+    expect(f.events).toEqual([]);
+    expect(f.errors).toEqual(["has: account_number_invalid"]);
+  }
+});
+
 test("local lists skip all writes and usage queries", async () => {
   const f = fixture();
   expect(await main(["list", "--local"], f.deps)).toBe(0);
@@ -119,8 +228,9 @@ test("switch uses shown number and refuses ambiguous pools before writes", async
     second: { home: ".codex", accounts: ["account-b"] },
   });
   expect(await main(["switch", "codex", "1"], f.deps)).toBe(1);
+  expect(await main(["-h", "x", "-s", "1"], f.deps)).toBe(1);
   expect(f.events).toEqual([]);
-  expect(f.errors).toContain("ha-switch: pool_selection_required");
+  expect(f.errors).toContain("has: pool_selection_required");
 });
 test("run preserves forwarded arguments and child exit code", async () => {
   const f = fixture();
@@ -229,8 +339,8 @@ test("unknown exceptions do not reveal messages", async () => {
   f.deps.readPools = async () => {
     throw new Error("private credential value");
   };
-  expect(await main([], f.deps)).toBe(1);
-  expect(f.errors).toEqual(["ha-switch: unexpected_error"]);
+  expect(await main(["--list"], f.deps)).toBe(1);
+  expect(f.errors).toEqual(["has: unexpected_error"]);
 });
 test("explicit import passes configured Claude pools to legacy adapter", async () => {
   const f = fixture();
@@ -271,7 +381,7 @@ test("later invalid host configuration prevents all earlier-host mutations", asy
       : path?.endsWith("claude-pools.json")
         ? { default: { home: ".claude", accounts: ["bad/name"] } }
         : { default: { home: ".codex-target", accounts: ["account-a"] } };
-  expect(await main([], f.deps)).toBe(1);
+  expect(await main(["--list"], f.deps)).toBe(1);
   expect(await main(["sync"], f.deps)).toBe(1);
   expect(f.events).toEqual([]);
 });
@@ -342,7 +452,7 @@ test("mutation is macOS only while help and local list remain available", async 
   expect(await main(["--help"], f.deps)).toBe(0);
   expect(await main(["list", "codex", "--local"], f.deps)).toBe(0);
   expect(f.events).toEqual([]);
-  expect(f.errors).toEqual(["ha-switch: platform_unsupported", "ha-switch: platform_unsupported"]);
+  expect(f.errors).toEqual(["has: platform_unsupported", "has: platform_unsupported"]);
 });
 test("run supports Claude and Antigravity account selection with forwarded args", async () => {
   const f = fixture();
@@ -369,5 +479,5 @@ test("Codex restore has a named missing-backup error", async () => {
   const f = fixture();
   f.deps.restoreCodex = async () => false;
   expect(await main(["restore", "codex"], f.deps)).toBe(1);
-  expect(f.errors).toEqual(["ha-switch: backup_missing"]);
+  expect(f.errors).toEqual(["has: backup_missing"]);
 });

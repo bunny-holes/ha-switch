@@ -9,29 +9,65 @@ manner: Explain account behavior and data boundaries before development details.
 
 # HA Switch
 
-See the current account and available usage, then switch Codex, Claude Code, or Antigravity CLI
-by number. HA means Harness Account. This first release supports macOS.
+List managed Codex, Claude Code, and Antigravity CLI profiles and switch their accounts
+by number. HA means Harness Account. This version supports macOS.
 
 [한국어](README.ko.md)
 
-## Run
+## Install CLI
+
+GitHub Releases provide the CLI package and a separate agent skill.
+These commands work after release `v0.1.0` is published.
+Install Bun 1.4.2 or later, then install the CLI package from its release URL.[^bun-add]
 
 ```bash
-bunx @bunny-holes/ha-switch
+bun add --global --ignore-scripts https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/ha-switch-0.1.0.tgz
+export PATH="$(bun pm bin --global):$PATH"
+has --help
+has --version
 ```
 
-You need Bun 1.4.2 or later and the native `codex`, `claude`, or `agy` command.
+The command is `has`; the package name stays `@bunny-holes/ha-switch`.
+You also need the native `codex`, `claude`, or `agy` command for the tools you use.
+
+## Run
+
+The executable is `has`. With no options, it shows help.
+
+```bash
+has
+has --list
+has -h c -s 2
+```
+
+Before installing a release, use `bun src/bin.ts` in this repository in place of `has`.
+
 Sign in with Codex and Claude accounts in their native profiles first.
 For Antigravity, save each login under a label after signing in with `agy`.
-No global package installation is required.
+
+## Install the agent skill
+
+The optional `has` skill uses the installed CLI. It needs no marketplace or MCP server.
+For Codex, install it under `~/.agents/skills/` and invoke `$has`.[^codex-skills]
+For Claude Code, use `~/.claude/skills/` instead and invoke `/has`.[^claude-skills]
+
+```bash
+has_skill_archive="$(mktemp -d)/has-skill-0.1.0.tgz"
+curl -fL https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/has-skill-0.1.0.tgz -o "$has_skill_archive"
+mkdir -p "$HOME/.agents/skills"
+test ! -e "$HOME/.agents/skills/has" && tar -xzf "$has_skill_archive" -C "$HOME/.agents/skills"
+```
+
+The last command refuses to replace an existing `has` skill. Keep that folder until you choose to update it.
+The skill is a separate download; installing the CLI does not install the skill.
 
 ## First use
 
 Create configuration from the Codex and Claude profiles already on your computer:
 
 ```bash
-bunx @bunny-holes/ha-switch init
-bunx @bunny-holes/ha-switch list
+has init
+has --list
 ```
 
 `init` writes local configuration without switching accounts.
@@ -40,7 +76,7 @@ Claude keeps the target profile's settings and replaces only its login and accou
 If you already have pool configuration from toolbox, import that directory:
 
 ```bash
-bunx @bunny-holes/ha-switch import --from <directory>
+has import --from <directory>
 ```
 
 Import preserves the source configuration and saved accounts. It refuses different destination
@@ -49,30 +85,30 @@ configuration. Existing Claude account snapshots are copied into HA Switch's key
 While signed in to an Antigravity account, save it once:
 
 ```bash
-bunx @bunny-holes/ha-switch save agy personal
+has save agy personal
 ```
 
 Sign in to another account with `agy`, then save it under another label:
 
 ```bash
-bunx @bunny-holes/ha-switch save agy work
-bunx @bunny-holes/ha-switch list agy
-bunx @bunny-holes/ha-switch switch agy 1
+has save agy work
+has -h a
+has -h a -s 1
 ```
 
 ## Commands
 
-| Result | Command after `bunx @bunny-holes/ha-switch` |
+| Result | Command after `has` |
 | --- | --- |
-| Show all configured accounts and usage | `list` |
-| Show Codex accounts and usage | `list codex` |
-| Show Claude accounts and usage | `list claude` |
-| Show saved Antigravity accounts | `list agy` |
-| Read local account labels without usage requests or writes | `list --local` |
-| Switch Codex to account number 2 | `switch codex 2` |
-| Switch Claude to account number 1 | `switch claude 1` |
-| Switch Antigravity to account number 2 | `switch agy 2` |
-| List accounts before choosing a number | `switch codex` |
+| Show help | `--help` |
+| Show all configured harnesses, profiles, current selections and usage | `--list` |
+| Show Codex profiles and usage | `-h x` |
+| Show Claude profiles and usage | `-h c` |
+| Show saved Antigravity profiles | `-h a` |
+| Read local profile labels without usage requests or writes | `--list --local` |
+| Switch Codex to profile number 2 | `-h x -s 2` |
+| Switch Claude to profile number 1 | `-h c -s 1` |
+| Switch Antigravity to profile number 2 | `-h a -s 2` |
 | Synchronize saved login copies | `sync` |
 | Restore Codex's account from before its first switch | `restore codex` |
 | Restore Claude's previous account | `restore claude` |
@@ -85,6 +121,12 @@ bunx @bunny-holes/ha-switch switch agy 1
 | Create local configuration from existing profiles | `init` |
 | Import existing pool configuration and Claude snapshots | `import --from <directory>` |
 
+A harness is one of these coding tools. Use `-h` or `--harness` to choose it:
+`c` or `claude`, `x` or `codex`, and `a` or `antigravity`. The native name `agy` also works.
+Use `-s` or `--switch` to choose a profile number. For example,
+`has --harness claude --switch 2` selects Claude profile 2.
+Use `--help` for help; `-h` selects a harness.
+
 Use `--pool <name>` when you have several pools for the same tool.
 Use `--config-dir <directory>` to select another configuration directory.
 `--version` prints the installed package version.
@@ -96,7 +138,7 @@ A query failure stays visible in its account row. Reset credits are never consum
 ## Configuration
 
 The default directory is `~/.config/ha-switch/`. Set `HA_SWITCH_CONFIG_DIR` to change it.
-Account order in each file is the numbering used by `switch`.
+Profile numbers follow account order within each pool's configuration.
 
 `codex-pools.json`:
 
@@ -129,8 +171,8 @@ Pool configuration stores paths and labels, never login tokens.
 
 ## Check the result
 
-Run `list codex`, `list claude`, or `list agy` after switching. The current account has a check mark.
-`list --local` skips network requests and login synchronization.
+Run `has -h x`, `has -h c`, or `has -h a` after switching. `*` marks the current profile.
+`has --list --local` skips network requests and login synchronization.
 Normal Codex listing can refresh expired logins and synchronize their saved copies.
 Claude listing reads logins without changing them. Use `sync claude` to synchronize saved copies,
 and Claude itself to refresh an expired login.
@@ -159,12 +201,21 @@ Antigravity's native storage is described in its
 
 ## Development
 
-Source code is TypeScript. The npm package contains one executable, both READMEs, package metadata,
+Source code is TypeScript. The CLI package contains one executable, both READMEs, package metadata,
 and the license. No private profile data or development dependencies are shipped.
+The skill archive contains `has/SKILL.md`, its UI metadata, and the license.
 
 ```bash
 bun install
 bun run format
 bun run check
-bun scripts/build.ts /tmp/ha-switch.tgz
+bun run pack:release /tmp/ha-switch-release-0.1.0
 ```
+
+The release builder writes `ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, and `SHA256SUMS`.
+It builds in temporary directories and refuses to replace existing release files.
+`bun scripts/build.ts /tmp/ha-switch.tgz` still builds only the CLI package.
+
+[^bun-add]: [Bun's global and tarball installation documentation](https://bun.sh/docs/pm/cli/add).
+[^codex-skills]: [Codex skill directories and invocation](https://learn.chatgpt.com/docs/build-skills).
+[^claude-skills]: [Claude Code skill installation and invocation](https://code.claude.com/docs/en/skills).
