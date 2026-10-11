@@ -44,7 +44,7 @@ For a custom Codex or Claude target, use `has run codex` or `has run claude` wit
 
 - On an explicit setup request, use `has init` to discover existing Codex and Claude profiles without switching accounts.
 - Import an explicitly chosen configuration directory with `has import --from DIRECTORY`.
-- Save the current Antigravity login with `has save agy LABEL` only when the user asks to save it.
+- Save the current Antigravity login with `has -c a LABEL` or `has --create antigravity LABEL` only when the user asks to save it. This saves an existing login; it does not start sign-in. Codex and Claude registration is not supported.
 - Use `has restore codex`, `has restore claude`, or `has restore agy` when the user asks to restore a saved login.
 - Use `has sync` only when synchronization is part of the request; it can write saved login copies.
 - Report a CLI failure by its safe error code. Do not repair it by editing native login files, reading keychain secrets, or changing unrelated settings.

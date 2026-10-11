@@ -46,10 +46,12 @@ has                          Show help
 has --list                   List managed harnesses, profiles, and current selections
 has -h c                     List Claude profiles
 has -h c -s 2                Switch Claude to profile 2
+has -c a personal            Save the current Antigravity login as personal
 
 --list                       List all configured harnesses or the selected harness
 -h, --harness HARNESS         c/claude, x/codex, a/antigravity (agy)
 -s, --switch NUMBER           Switch the selected harness to the shown profile number
+-c, --create HARNESS          Save the current Antigravity login; a label is required
 --help                       Show help
 --version                    Show version
 
@@ -65,6 +67,7 @@ init
 import --from DIRECTORY
 
 Default: show help. Selecting only a harness lists its profiles.
+Create supports Antigravity only. Sign in with agy first.
 --local reads saved data without updates or queries.
 Common: --config-dir DIRECTORY
 One pool is selected automatically. Use --pool when switching among several.`;
@@ -74,6 +77,12 @@ const HARNESSES: Record<Host, { shortcut: string; title: string }> = {
   claude: { shortcut: "c", title: "Claude" },
   agy: { shortcut: "a", title: "Antigravity" },
 };
+
+const OPTION_ALIASES = new Map([
+  ["-h", "--harness"],
+  ["-s", "--switch"],
+  ["-c", "--create"],
+]);
 
 function hostForHarness(text: string): Host | undefined {
   return (Object.keys(HARNESSES) as Host[]).find(
@@ -209,7 +218,7 @@ export async function main(
     let list = false;
     for (let index = 0; index < input.length; index++) {
       const inputWord = input[index];
-      const word = inputWord === "-h" ? "--harness" : inputWord === "-s" ? "--switch" : inputWord;
+      const word = OPTION_ALIASES.get(inputWord) ?? inputWord;
       if (word === "--local") {
         if (local) throw new PoolError("duplicate_option");
         local = true;
@@ -217,7 +226,15 @@ export async function main(
         if (list) throw new PoolError("duplicate_option");
         list = true;
       } else if (
-        ["--pool", "--config-dir", "--account", "--from", "--harness", "--switch"].includes(word)
+        [
+          "--pool",
+          "--config-dir",
+          "--account",
+          "--from",
+          "--harness",
+          "--switch",
+          "--create",
+        ].includes(word)
       ) {
         if (options.has(word)) throw new PoolError("duplicate_option");
         const value = input[++index];
@@ -230,7 +247,13 @@ export async function main(
     let hostText: string | undefined = positions[1];
     let number: string | undefined = positions[2];
     const extra = positions.slice(3);
-    if (list || options.has("--harness") || options.has("--switch")) {
+    if (options.has("--create")) {
+      if (list || options.has("--harness") || options.has("--switch") || positions.length > 1)
+        throw new PoolError("option_not_applicable");
+      command = "save";
+      hostText = options.get("--create");
+      number = positions[0];
+    } else if (list || options.has("--harness") || options.has("--switch")) {
       if (positions.length || (list && options.has("--switch")))
         throw new PoolError("option_not_applicable");
       command = options.has("--switch") ? "switch" : "list";

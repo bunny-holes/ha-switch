@@ -386,20 +386,94 @@ test("later invalid host configuration prevents all earlier-host mutations", asy
   expect(f.events).toEqual([]);
 });
 test("Antigravity save prepares labeled configuration before capturing login", async () => {
+  for (const args of [
+    ["save", "agy", "account-a"],
+    ["-c", "a", "account-a"],
+    ["--create", "antigravity", "account-a"],
+    ["--create", "agy", "account-a"],
+  ]) {
+    const f = fixture();
+    let next: Pools | undefined;
+    f.deps.captureAgy = async (label) => {
+      f.events.push(`agy-save:${label}`);
+    };
+    f.deps.saveAgy = async (_directory, previous, configurations, capture) => {
+      expect(previous).toEqual({});
+      next = configurations;
+      f.events.push("agy-preflight");
+      await capture();
+    };
+    expect(await main(args, f.deps)).toBe(0);
+    expect(next).toEqual({ default: { home: ".gemini", accounts: ["account-a"] } });
+    expect(f.events).toEqual(["agy-preflight", "agy-save:account-a"]);
+    expect(f.errors).toEqual([]);
+  }
+});
+test("create flags append to the selected pool and preserve other configuration", async () => {
   const f = fixture();
+  const previous: Pools = {
+    first: { home: ".gemini", accounts: ["account-a"], args: ["--debug"] },
+    second: { home: ".gemini", accounts: ["account-b"] },
+  };
   let next: Pools | undefined;
+  f.deps.readPools = async (path) => {
+    expect(path).toBe("/test-explicit-config/agy-pools.json");
+    return previous;
+  };
   f.deps.captureAgy = async (label) => {
     f.events.push(`agy-save:${label}`);
   };
-  f.deps.saveAgy = async (_directory, previous, configurations, capture) => {
-    expect(previous).toEqual({});
+  f.deps.saveAgy = async (directory, before, configurations, capture) => {
+    expect(directory).toBe("/test-explicit-config");
+    expect(before).toEqual(previous);
     next = configurations;
-    f.events.push("agy-preflight");
     await capture();
   };
-  expect(await main(["save", "agy", "account-a"], f.deps)).toBe(0);
-  expect(next).toEqual({ default: { home: ".gemini", accounts: ["account-a"] } });
-  expect(f.events).toEqual(["agy-preflight", "agy-save:account-a"]);
+  expect(
+    await main(
+      ["-c", "a", "account-c", "--pool", "first", "--config-dir", "/test-explicit-config"],
+      f.deps,
+    ),
+  ).toBe(0);
+  expect(next).toEqual({
+    ...previous,
+    first: { ...previous.first, accounts: ["account-a", "account-c"] },
+  });
+  expect(previous.first.accounts).toEqual(["account-a"]);
+  expect(f.events).toEqual(["agy-save:account-c"]);
+});
+test("invalid create flags fail before reading or changing accounts", async () => {
+  for (const args of [
+    ["-c"],
+    ["-c", "a"],
+    ["-c", "a", "account-a", "--create", "a"],
+    ["-c", "a", "account-a", "--list"],
+    ["-c", "a", "account-a", "-s", "1"],
+    ["-c", "a", "account-a", "-h", "a"],
+    ["-c", "a", "account-a", "--local"],
+    ["-c", "a", "account-a", "account-b"],
+    ["-c", "a", "account-a", "--", "--help"],
+    ["-c", "x", "account-a"],
+    ["--create", "claude", "account-a"],
+    ["-c", "unknown", "account-a"],
+  ]) {
+    const f = fixture();
+    let reads = 0;
+    f.deps.readPools = async () => {
+      reads++;
+      return {};
+    };
+    f.deps.captureAgy = async () => {
+      f.events.push("capture");
+    };
+    f.deps.saveAgy = async () => {
+      f.events.push("config-write");
+    };
+    expect(await main(args, f.deps)).toBe(1);
+    expect(reads).toBe(0);
+    expect(f.events).toEqual([]);
+    expect(f.errors).toHaveLength(1);
+  }
 });
 test("Antigravity labels are validated before snapshot or config writes", async () => {
   const f = fixture();
@@ -410,6 +484,7 @@ test("Antigravity labels are validated before snapshot or config writes", async 
     f.events.push("config-write");
   };
   expect(await main(["save", "agy", "bad/name"], f.deps)).toBe(1);
+  expect(await main(["-c", "a", "bad/name"], f.deps)).toBe(1);
   expect(f.events).toEqual([]);
 });
 test("Antigravity list, switch, sync and restore use native adapter", async () => {
@@ -449,10 +524,15 @@ test("mutation is macOS only while help and local list remain available", async 
   f.deps.platform = "linux";
   expect(await main(["switch", "codex", "1"], f.deps)).toBe(1);
   expect(await main(["save", "agy", "account-a"], f.deps)).toBe(1);
+  expect(await main(["-c", "a", "account-a"], f.deps)).toBe(1);
   expect(await main(["--help"], f.deps)).toBe(0);
   expect(await main(["list", "codex", "--local"], f.deps)).toBe(0);
   expect(f.events).toEqual([]);
-  expect(f.errors).toEqual(["has: platform_unsupported", "has: platform_unsupported"]);
+  expect(f.errors).toEqual([
+    "has: platform_unsupported",
+    "has: platform_unsupported",
+    "has: platform_unsupported",
+  ]);
 });
 test("run supports Claude and Antigravity account selection with forwarded args", async () => {
   const f = fixture();

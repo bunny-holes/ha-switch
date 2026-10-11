@@ -86,13 +86,13 @@ Claude의 저장 계정은 HA Switch의 키체인 이름으로 복사한다.
 Antigravity 계정에 로그인한 상태에서 한 번 저장한다.
 
 ```bash
-has save agy personal
+has -c a personal
 ```
 
 `agy`에서 다른 계정으로 로그인한 뒤 다른 이름으로 저장한다.
 
 ```bash
-has save agy work
+has -c a work
 has -h a
 has -h a -s 1
 ```
@@ -116,7 +116,7 @@ has -h a -s 1
 | Codex를 첫 전환 전 계정으로 돌리기 | `restore codex` |
 | Claude를 직전 계정으로 돌리기 | `restore claude` |
 | Antigravity를 첫 전환 전 계정으로 돌리기 | `restore agy` |
-| 현재 Antigravity 로그인 저장하기 | `save agy <label>` |
+| 현재 Antigravity 로그인 저장하기 | `-c a <label>` |
 | 선택된 계정으로 Codex 이어 열기 | `run codex -- resume` |
 | 2번 계정으로 바꾸고 Codex 이어 열기 | `run codex --account 2 -- resume` |
 | 대상 프로필의 현재 계정으로 Claude 열기 | `run claude` |
@@ -130,6 +130,9 @@ Antigravity의 앱 명령인 `agy`도 받는다.
 프로필 번호는 `-s`나 `--switch`로 고른다.
 `has --harness claude --switch 2`는 Claude를 2번 프로필로 바꾼다.
 도움말은 `--help`로 본다. `-h`는 하네스 선택에 쓴다.
+현재 Antigravity 로그인은 `-c`나 `--create`에 하네스와 이름을 지정해 저장한다.
+`has --create antigravity personal`은 현재 로그인을 저장하고 로그인 화면을 열지 않는다.
+Codex와 Claude 계정 등록은 아직 지원하지 않는다. `has save agy <label>`도 쓸 수 있다.
 
 같은 도구에 계정 묶음이 여럿이면 `--pool <name>`으로 고른다.
 다른 설정 폴더는 `--config-dir <directory>`로 지정한다.
@@ -170,7 +173,7 @@ Antigravity의 앱 명령인 `agy`도 받는다.
 경로는 홈 폴더를 기준으로 읽는다. 절대경로도 쓸 수 있다.
 설정 파일에는 경로와 계정 이름만 두고 인증 토큰은 넣지 않는다.
 
-`agy-pools.json`은 `save agy`가 만든다. `accounts`에는 저장한 계정 이름이 들어간다.
+`agy-pools.json`은 `has -c a <label>`이 만든다. `accounts`에는 저장한 계정 이름이 들어간다.
 
 ## 확인
 

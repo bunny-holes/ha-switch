@@ -86,13 +86,13 @@ configuration. Existing Claude account snapshots are copied into HA Switch's key
 While signed in to an Antigravity account, save it once:
 
 ```bash
-has save agy personal
+has -c a personal
 ```
 
 Sign in to another account with `agy`, then save it under another label:
 
 ```bash
-has save agy work
+has -c a work
 has -h a
 has -h a -s 1
 ```
@@ -114,7 +114,7 @@ has -h a -s 1
 | Restore Codex's account from before its first switch | `restore codex` |
 | Restore Claude's previous account | `restore claude` |
 | Restore Antigravity's account from before its first switch | `restore agy` |
-| Save the current Antigravity login | `save agy <label>` |
+| Save the current Antigravity login | `-c a <label>` |
 | Start Codex with the selected pool | `run codex -- resume` |
 | Select an account before starting Codex | `run codex --account 2 -- resume` |
 | Start Claude with the pool's current login | `run claude` |
@@ -127,6 +127,9 @@ A harness is one of these coding tools. Use `-h` or `--harness` to choose it:
 Use `-s` or `--switch` to choose a profile number. For example,
 `has --harness claude --switch 2` selects Claude profile 2.
 Use `--help` for help; `-h` selects a harness.
+Use `-c` or `--create` with a harness and label to save the current Antigravity login:
+`has --create antigravity personal`. This option saves an existing login without starting sign-in.
+Codex and Claude account registration is not supported. `has save agy <label>` still works.
 
 Use `--pool <name>` when you have several pools for the same tool.
 Use `--config-dir <directory>` to select another configuration directory.
@@ -168,7 +171,7 @@ Profile numbers follow account order within each pool's configuration.
 Paths are resolved from your home directory. Absolute paths also work.
 Pool configuration stores paths and labels, never login tokens.
 
-`agy-pools.json` is created by `save agy`. Its `accounts` list contains the saved labels.
+`agy-pools.json` is created by `has -c a <label>`. Its `accounts` list contains the saved labels.
 
 ## Check the result
 
