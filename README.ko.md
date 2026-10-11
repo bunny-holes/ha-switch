@@ -72,6 +72,7 @@ has --list
 
 `init`은 계정을 전환하지 않고 설정을 만든다.
 Codex는 별도 `.codex-ha-switch` 폴더를 대상으로 쓰고 원래 프로필을 유지한다.
+선택한 계정으로 Codex를 쓰려면 `has run codex`로 연다.
 Claude는 대상 프로필의 설정을 유지하고 로그인과 계정 정보만 바꾼다.
 기존 toolbox의 `codex-pools.json`과 `claude-pools.json`이 있으면 그 폴더를 가져온다.
 

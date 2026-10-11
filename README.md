@@ -72,6 +72,7 @@ has --list
 
 `init` writes local configuration without switching accounts.
 Codex uses a separate `.codex-ha-switch` target so its source profiles stay intact.
+Start Codex with `has run codex` so it reads the selected account from that target.
 Claude keeps the target profile's settings and replaces only its login and account metadata.
 If you already have pool configuration from toolbox, import that directory:
 

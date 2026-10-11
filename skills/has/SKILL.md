@@ -36,7 +36,9 @@ Codex accepts `x` or `codex`; Antigravity accepts `a`, `antigravity`, or `agy`.
 When several pools exist, select the user's pool with `--pool NAME`.
 If the requested profile or pool is unclear, list its local profiles and ask for the missing choice.
 Verify with `has -h c --local`, using the selected tool and the same pool and configuration directory.
-Open sessions keep their loaded login; the next native launch uses the selected account.
+Open sessions keep their loaded login.
+Codex's default pool uses a separate target directory. Launch it with `has run codex` to use the selected account.
+For a custom Codex or Claude target, use `has run codex` or `has run claude` with the same pool and configuration directory.
 
 ## Setup and recovery
 
