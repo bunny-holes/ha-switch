@@ -10,6 +10,7 @@ import {
   prepareNativeCodexPool,
   restoreAccount,
   useAccount,
+  verifySelectedCodexAccount,
 } from "../src/pool.ts";
 
 const auth = (account: string, date = "2026-01-01") =>
@@ -169,6 +170,96 @@ test("native switching never reads an unconfigured old home", async () => {
     );
   } finally {
     intercepted.mockRestore();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("native refreshed credentials return to their own source before selecting another account", async () => {
+  const { home, directory } = await fixture();
+  try {
+    const initial = await prepareNativeCodexPool(legacy, ".codex", directory, home);
+    await useAccount(initial.pool, ".codex", home, {
+      configuredOnly: true,
+      expectedTarget: initial.expectedTarget,
+    });
+    const selectedSource = join(home, ".codex-account-b", "auth.json");
+    const selected = await Bun.file(selectedSource).text();
+    const refreshed = auth("synthetic-a", "2029-01-01");
+    await Bun.write(join(home, ".codex", "auth.json"), refreshed);
+    const next = await prepareNativeCodexPool(legacy, ".codex-account-b", directory, home);
+    await useAccount(next.pool, ".codex-account-b", home, {
+      configuredOnly: true,
+      expectedTarget: next.expectedTarget,
+    });
+    expect(await Bun.file(join(directory, "codex-accounts", "native", "auth.json")).text()).toBe(
+      refreshed,
+    );
+    expect(await Bun.file(selectedSource).text()).toBe(selected);
+    expect(await Bun.file(join(home, ".codex", "auth.json")).text()).toBe(selected);
+    await verifySelectedCodexAccount(next.pool, ".codex-account-b", home);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("a delayed old session write only changes the execution slot and fails the launch identity check", async () => {
+  const { home, directory } = await fixture();
+  try {
+    const prepared = await prepareNativeCodexPool(legacy, ".codex-account-b", directory, home);
+    await useAccount(prepared.pool, ".codex-account-b", home, {
+      configuredOnly: true,
+      expectedTarget: prepared.expectedTarget,
+    });
+    const archive = join(directory, "codex-accounts", "native", "auth.json");
+    const source = join(home, ".codex-account-b", "auth.json");
+    const original = await Bun.file(archive).text();
+    const selected = await Bun.file(source).text();
+    await Bun.write(join(home, ".codex", "auth.json"), auth("synthetic-a", "2029-01-01"));
+    await expect(
+      verifySelectedCodexAccount(prepared.pool, ".codex-account-b", home),
+    ).rejects.toThrow("account_auth_changed");
+    expect(await Bun.file(archive).text()).toBe(original);
+    expect(await Bun.file(source).text()).toBe(selected);
+    const repaired = await prepareNativeCodexPool(legacy, ".codex-account-b", directory, home);
+    await useAccount(repaired.pool, ".codex-account-b", home, {
+      configuredOnly: true,
+      expectedTarget: repaired.expectedTarget,
+    });
+    await verifySelectedCodexAccount(repaired.pool, ".codex-account-b", home);
+    expect(await Bun.file(source).text()).toBe(selected);
+    expect(await Bun.file(join(home, ".codex", "auth.json")).text()).toBe(selected);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("mixed account metadata and refreshed JWT credentials are rejected without writing any source", async () => {
+  const { home, directory } = await fixture();
+  try {
+    const prepared = await prepareNativeCodexPool(legacy, ".codex-account-b", directory, home);
+    await useAccount(prepared.pool, ".codex-account-b", home, {
+      configuredOnly: true,
+      expectedTarget: prepared.expectedTarget,
+    });
+    const archive = join(directory, "codex-accounts", "native", "auth.json");
+    const source = join(home, ".codex-account-b", "auth.json");
+    const original = await Bun.file(archive).text();
+    const selected = await Bun.file(source).text();
+    const payload = Buffer.from(
+      JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "synthetic-a" } }),
+    ).toString("base64url");
+    const mixed = JSON.stringify({
+      tokens: { account_id: "synthetic-b", id_token: `synthetic.${payload}.synthetic` },
+      last_refresh: "2029-01-01",
+    });
+    await Bun.write(join(home, ".codex", "auth.json"), mixed);
+    await expect(
+      useAccount(prepared.pool, ".codex-account-b", home, { configuredOnly: true }),
+    ).rejects.toThrow("account_auth_invalid");
+    expect(await Bun.file(archive).text()).toBe(original);
+    expect(await Bun.file(source).text()).toBe(selected);
+    expect(await Bun.file(join(home, ".codex", "auth.json")).text()).toBe(mixed);
+  } finally {
     await rm(home, { recursive: true, force: true });
   }
 });

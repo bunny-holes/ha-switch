@@ -7,12 +7,12 @@ export async function legacyRegression(executable: string) {
   const home = await realpath(await mkdtemp(join(tmpdir(), "ha-switch-legacy-test-")));
   try {
     const configuration = join(home, ".config", "ha-switch");
-    const target = join(home, ".codex-pkls");
+    const target = join(home, ".codex-team");
     await Bun.write(
       join(configuration, "codex-pools.json"),
       JSON.stringify({
-        pkls: {
-          home: ".codex-pkls",
+        team: {
+          home: ".codex-team",
           accounts: [".codex", ".codex-account-a", ".codex-account-b"],
           args: ["--yolo", "-c", "web_search=live", "-c", "model_reasoning_effort=medium"],
         },
@@ -22,7 +22,7 @@ export async function legacyRegression(executable: string) {
       [".codex", "synthetic-native"],
       [".codex-account-a", "synthetic-a"],
       [".codex-account-b", "synthetic-b"],
-      [".codex-pkls", "synthetic-a"],
+      [".codex-team", "synthetic-a"],
     ]) {
       await mkdir(join(home, profile), { recursive: true });
       await Bun.write(
@@ -55,10 +55,10 @@ export async function legacyRegression(executable: string) {
       assert.equal(error, "");
       return { output: output.replaceAll(home, "<home>"), code };
     };
-    const listing = await run(["-h", "x", "--pool", "pkls", "--local"]);
+    const listing = await run(["-h", "x", "--pool", "team", "--local"]);
     assert.equal(listing.code, 0);
     assert.match(listing.output, /\*\s+2\s+\.codex-account-a/);
-    const switched = await run(["-h", "x", "--pool", "pkls", "-s", "3"]);
+    const switched = await run(["-h", "x", "--pool", "team", "-s", "3"]);
     assert.equal(switched.code, 0);
     assert.equal(
       (await Bun.file(join(target, "auth.json")).json()).tokens.account_id,
@@ -68,13 +68,13 @@ export async function legacyRegression(executable: string) {
       (await Bun.file(join(home, ".codex", "auth.json")).json()).tokens.account_id,
       "synthetic-native",
     );
-    const selectedListing = await run(["-h", "x", "--pool", "pkls", "--local"]);
+    const selectedListing = await run(["-h", "x", "--pool", "team", "--local"]);
     assert.match(selectedListing.output, /\*\s+3\s+\.codex-account-b/);
     const launched = await run([
       "run",
       "codex",
       "--pool",
-      "pkls",
+      "team",
       "--",
       "resume",
       "synthetic-session",
@@ -82,7 +82,7 @@ export async function legacyRegression(executable: string) {
     assert.equal(launched.code, 7);
     assert.equal(
       launched.output,
-      "<home>/.codex-pkls\n--yolo\n-c\nweb_search=live\n-c\nmodel_reasoning_effort=medium\nresume\nsynthetic-session\n",
+      "<home>/.codex-team\n--yolo\n-c\nweb_search=live\n-c\nmodel_reasoning_effort=medium\nresume\nsynthetic-session\n",
     );
     return { listing, switched, selectedListing, launched };
   } finally {

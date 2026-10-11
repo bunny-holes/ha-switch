@@ -25,6 +25,7 @@ function fixture() {
       accounts: pool.accounts.map((account) => ({ account })),
     }),
     codexSources: async (configured) => configured,
+    verifyCodex: async () => {},
     prepareCodex: async (configured, _label, directory, home) => ({
       pool: nativeCodexPool(configured, directory, home),
       expectedTarget: {},
@@ -40,7 +41,10 @@ function fixture() {
       events.push(`query:${account}`);
       return {
         resetCredits: 0,
-        rateLimits: { primary: { windowDurationMins: 300, usedPercent: 25 } },
+        rateLimits: {
+          primary: { windowDurationMins: 300, usedPercent: 25 },
+          secondary: { windowDurationMins: 10080, usedPercent: 25 },
+        },
       };
     },
     useCodex: async (_pool, account) => {
@@ -115,10 +119,10 @@ test("--list shows configured harnesses, profiles, current selection and live us
   expect(f.output[0]).toContain("profile");
   expect(f.output[0]).toContain("* current profile");
   expect(f.output[0]).toMatch(/\*\s+1\s+account-a/m);
-  expect(f.output[0]).toContain("has -h x");
-  expect(f.output[0]).toContain("-s <NUMBER>");
+  expect(f.output[0]).toContain("switch");
+  expect(f.output[0]).toContain("switch <NUMBER>");
   expect(f.output.join("\n")).toContain("75%");
-  expect(f.events).toContain("codex-sync");
+  expect(f.events).not.toContain("codex-sync");
 });
 
 test("selecting a harness lists only that harness for shortcuts and full names", async () => {
@@ -612,7 +616,11 @@ test("shortcuts launch the selected account in the native home with pool and for
       return 7;
     };
     expect(await main([shortcut, "--", "resume", "synthetic-session"], f.deps)).toBe(7);
-    expect(f.events).toEqual([`${host}-switch:account-b`, "launch"]);
+    expect(f.events).toEqual([
+      ...(host === "codex" ? ["query:account-b"] : []),
+      `${host}-switch:account-b`,
+      "launch",
+    ]);
     expect(f.errors).toEqual([]);
   }
 });
@@ -640,20 +648,17 @@ test("shortcut account selection and safe mode work without prior account lookup
   expect(f.events).toEqual(["codex-switch:account-b"]);
 });
 
-test("shortcut prefers the native account and falls back only when it is unknown", async () => {
-  for (const nativeCurrent of ["account-a", undefined]) {
-    const f = fixture();
-    f.deps.readPools = async () => ({
-      pkls: { home: ".codex-pkls", accounts: ["account-a", "account-b"] },
-    });
-    f.deps.listCodex = async (pool) => ({
-      current: pool.home === ".codex-pkls" ? "account-b" : undefined,
-      accounts: [],
-    });
-    f.deps.listNativeCodex = async () => ({ current: nativeCurrent, accounts: [] });
-    expect(await main(["x"], f.deps)).toBe(7);
-    expect(f.events[0]).toBe(`codex-switch:${nativeCurrent ?? "account-b"}`);
-  }
+test("shortcut selects usage priority instead of the current legacy or native account", async () => {
+  const f = fixture();
+  f.deps.readPools = async () => ({
+    pkls: { home: ".codex-pkls", accounts: ["account-a", "account-b"] },
+  });
+  f.deps.listNativeCodex = async () => ({
+    current: "account-a",
+    accounts: [{ account: "account-a" }, { account: "account-b" }],
+  });
+  expect(await main(["x"], f.deps)).toBe(7);
+  expect(f.events).toContain("codex-switch:account-b");
 });
 
 test("shortcuts refuse unknown selections, invalid numbers and ambiguous pools before writes", async () => {
@@ -661,7 +666,7 @@ test("shortcuts refuse unknown selections, invalid numbers and ambiguous pools b
   f.deps.listCodex = async () => ({ accounts: [] });
   f.deps.listNativeCodex = async () => ({ accounts: [] });
   expect(await main(["x"], f.deps)).toBe(1);
-  expect(f.errors).toEqual(["has: account_current_not_in_pool"]);
+  expect(f.errors[0]).toContain("no_available_account");
   for (const shortcut of ["x", "c"]) {
     expect(await main([shortcut, "--account", "0"], f.deps)).toBe(1);
     expect(await main([shortcut, "--account", "3"], f.deps)).toBe(1);
@@ -707,7 +712,7 @@ test("shortcut dry-run only reads configuration and reports the assembled comman
 test("bare switch and restore manage the native Codex home while harness flags retain the legacy home", async () => {
   const f = fixture();
   f.deps.readPools = async () => ({
-    pkls: { home: ".codex-pkls", accounts: ["account-a", "account-b"] },
+    team: { home: ".codex-team", accounts: ["account-a", "account-b"] },
   });
   f.deps.useCodex = async (pool, account, _home, options) => {
     f.events.push(`${pool.home}:${account}:${options?.configuredOnly === true}`);
@@ -719,31 +724,31 @@ test("bare switch and restore manage the native Codex home while harness flags r
   };
   expect(await main(["switch", "2"], f.deps)).toBe(0);
   expect(await main(["restore"], f.deps)).toBe(0);
-  expect(await main(["-h", "x", "--pool", "pkls", "-s", "1"], f.deps)).toBe(0);
-  expect(f.events).toEqual([".codex:account-b:true", ".codex-pkls:account-a:false"]);
+  expect(await main(["-h", "x", "--pool", "team", "-s", "1"], f.deps)).toBe(0);
+  expect(f.events).toEqual([".codex:account-b:true", ".codex-team:account-a:false"]);
   expect(await main(["switch", "--local", "--config-dir", "/test-config"], f.deps)).toBe(0);
   expect(f.output.at(-1)).toContain(
-    "has --pool 'pkls' --config-dir '/test-config' switch <NUMBER>",
+    "has --pool 'team' --config-dir '/test-config' switch <NUMBER>",
   );
 });
 
 test("legacy Codex run keeps its pool home and does not inject shortcut flags", async () => {
   const f = fixture();
   f.deps.readPools = async () => ({
-    pkls: {
-      home: ".codex-pkls",
+    team: {
+      home: ".codex-team",
       accounts: ["account-a", "account-b"],
       args: ["--yolo", "-c", "web_search=live"],
     },
   });
   f.deps.launch = async (_host, pool, args) => {
-    expect(pool.home).toBe(".codex-pkls");
+    expect(pool.home).toBe(".codex-team");
     expect(pool.args).toEqual(["--yolo", "-c", "web_search=live"]);
     expect(args).toEqual(["resume", "synthetic-session"]);
     return 0;
   };
   expect(
-    await main(["run", "codex", "--pool", "pkls", "--", "resume", "synthetic-session"], f.deps),
+    await main(["run", "codex", "--pool", "team", "--", "resume", "synthetic-session"], f.deps),
   ).toBe(0);
   expect(f.events).toEqual(["codex-sync"]);
 });

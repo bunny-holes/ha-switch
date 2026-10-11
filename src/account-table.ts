@@ -1,5 +1,6 @@
 import { PoolError } from "./errors.ts";
 import type { AccountListing, AccountRow, Pool, RateWindow } from "./types.ts";
+import { remainingUsage, usageBlocked, usageWindow, usageWindows } from "./usage-state.ts";
 
 export function accountAt(pool: Pool, text: string): string {
   const number = /^\d+$/.test(text) ? Number(text) : 0;
@@ -10,14 +11,12 @@ export function accountAt(pool: Pool, text: string): string {
 
 function usageCells(row: AccountRow, now: number): string[] {
   if (row.resetError) return ["query failed", "-", "-", "-", "-"];
-  const windows = [row.rateLimits?.primary, row.rateLimits?.secondary].filter(
-    (window): window is RateWindow => window != null,
-  );
-  const windowFor = (minutes: number) => windows.find((w) => w.windowDurationMins === minutes);
-  const left = (window?: RateWindow) =>
-    typeof window?.usedPercent === "number" && Number.isFinite(window.usedPercent)
-      ? `${Math.max(0, Math.min(100, 100 - window.usedPercent))}%`
-      : "-";
+  const windows = usageWindows(row.rateLimits);
+  const windowFor = (minutes: number) => usageWindow(row.rateLimits, minutes);
+  const left = (window?: RateWindow) => {
+    const remaining = remainingUsage(window);
+    return remaining === null ? "-" : `${remaining}%`;
+  };
   const resets = (window?: RateWindow) => {
     if (typeof window?.resetsAt !== "number" || !Number.isFinite(window.resetsAt)) return "-";
     const date = new Date(window.resetsAt * 1000);
@@ -30,14 +29,7 @@ function usageCells(row: AccountRow, now: number): string[] {
           minute: "2-digit",
         });
   };
-  const blocked =
-    row.rateLimits?.rateLimitReachedType != null ||
-    windows.some(
-      (w) =>
-        typeof w.usedPercent === "number" &&
-        w.usedPercent >= 100 &&
-        (typeof w.resetsAt !== "number" || !Number.isFinite(w.resetsAt) || w.resetsAt * 1000 > now),
-    );
+  const blocked = usageBlocked(row, now);
   const known = windows.some(
     (w) => typeof w.usedPercent === "number" && Number.isFinite(w.usedPercent),
   );

@@ -1,5 +1,8 @@
+import type { CodexSelectionPolicy } from "./selection.ts";
+
 export interface PoolSpec {
   home: string;
+  selection?: CodexSelectionPolicy;
   accounts: string[];
   args?: string[];
   from?: Record<string, string>;

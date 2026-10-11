@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { errorCode, PoolError } from "./errors.ts";
 import { logger } from "./log.ts";
 import { localProfiles } from "./profiles.ts";
+import { validateCodexSelectionPolicy } from "./selection.ts";
 import type { AccountListing, Pool, PoolSpec, Pools } from "./types.ts";
 
 export { PoolError } from "./errors.ts";
@@ -26,6 +27,7 @@ function validatePool(value: unknown, home: string): asserts value is PoolSpec {
     pool.accounts.some((account) => !nonempty(account))
   )
     throw new PoolError("pool_config_invalid");
+  if (pool.selection !== undefined) validateCodexSelectionPolicy(pool.selection);
   const accounts = pool.accounts as string[];
   if (new Set(accounts).size !== accounts.length) throw new PoolError("pool_profile_duplicate");
   if (
@@ -130,7 +132,11 @@ function parseAuth(text: string): { account?: string; refreshed?: string; plan: 
         JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")),
       );
       if (!payload) throw new Error("jwt_payload_invalid");
-      const claim = record(payload["https://api.openai.com/auth"])?.chatgpt_plan_type;
+      const claims = record(payload["https://api.openai.com/auth"]);
+      const tokenAccount = claims?.chatgpt_account_id;
+      if (tokenAccount !== undefined && (!nonempty(tokenAccount) || tokenAccount !== account))
+        throw new Error("jwt_account_mismatch");
+      const claim = claims?.chatgpt_plan_type;
       if (claim !== undefined && typeof claim !== "string") throw new Error("jwt_plan_invalid");
       plan = typeof claim === "string" ? claim : null;
     } catch (cause) {
@@ -262,6 +268,8 @@ async function synchronize(
   const writes = syncPlan(auths);
   for (const { from, to } of writes) {
     const previous = auths.find((auth) => auth?.directory === to);
+    if ((await readAuth(from.directory, home))?.text !== from.text)
+      throw new PoolError("account_auth_changed");
     await atomicWrite(join(resolve(home, to), "auth.json"), from.text, 0o600, {
       text: previous?.text,
     });
@@ -454,4 +462,17 @@ export async function restoreAccount(
   await atomicWrite(path, newest.text, 0o600, { text: current?.text });
   log("restore_success");
   return true;
+}
+
+export async function verifySelectedCodexAccount(
+  pool: Pool,
+  label: string,
+  home = homedir(),
+): Promise<void> {
+  const [source, target] = await Promise.all([
+    readAuth(profileDirectory(pool, label, home), home),
+    readAuth(pool.home, home),
+  ]);
+  if (!source?.account || target?.account !== source.account)
+    throw new PoolError("account_auth_changed");
 }

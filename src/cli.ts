@@ -38,7 +38,9 @@ import {
   restoreAccount,
   syncAll,
   useAccount,
+  verifySelectedCodexAccount,
 } from "./pool.ts";
+import { selectCodexAccount } from "./selection.ts";
 import type { AccountListing, Pool, Pools } from "./types.ts";
 import { codexAccountUsage } from "./usage.ts";
 
@@ -118,6 +120,7 @@ export interface CliDependencies {
   syncCodex: typeof syncAll;
   useCodex: typeof useAccount;
   restoreCodex: typeof restoreAccount;
+  verifyCodex: typeof verifySelectedCodexAccount;
   prepareCodex: typeof prepareNativeCodexPool;
   codexSources: typeof codexPoolSources;
   listNativeCodex: typeof listNativeCodexAccounts;
@@ -195,6 +198,7 @@ export async function main(
     syncCodex: syncAll,
     useCodex: useAccount,
     restoreCodex: restoreAccount,
+    verifyCodex: verifySelectedCodexAccount,
     prepareCodex: prepareNativeCodexPool,
     codexSources: codexPoolSources,
     listNativeCodex: listNativeCodexAccounts,
@@ -292,6 +296,12 @@ export async function main(
       hostText = "codex";
       native = true;
     }
+    if (
+      hostForHarness(hostText ?? "") === "codex" &&
+      (positions[0] === "switch" ||
+        (!options.has("--pool") && ["list", "switch"].includes(command)))
+    )
+      native = true;
     if (extra.length) throw new PoolError("unknown_argument");
     if (!["list", "switch", "sync", "restore", "run", "init", "import", "save"].includes(command))
       throw new PoolError("unknown_command");
@@ -358,6 +368,7 @@ export async function main(
     );
     let found = false;
     for (const { host, pools } of loaded) {
+      let nativeTarget = native;
       if (
         !selectedHost &&
         (!Object.keys(pools).length ||
@@ -367,12 +378,26 @@ export async function main(
       let selected = selectPools(
         pools,
         options.get("--pool"),
-        native || ["switch", "restore", "run"].includes(command),
+        nativeTarget || ["switch", "restore", "run"].includes(command),
       );
       if (command === "run" && options.has("--account"))
         accountAt(selected[0], options.get("--account") as string);
       found = true;
-      if (native) {
+      if (host === "codex") {
+        const retired = selected.some(
+          (pool) => resolve(deps.home, pool.home) === resolve(deps.home, ".codex-pkls"),
+        );
+        if (retired && !nativeTarget && command !== "list")
+          throw new PoolError("pool_home_retired");
+        if (
+          selected.length === 1 &&
+          ((command === "list" && retired) ||
+            (["list", "switch", "restore", "run"].includes(command) &&
+              resolve(deps.home, selected[0].home) === resolve(deps.home, ".codex")))
+        )
+          nativeTarget = true;
+      }
+      if (nativeTarget) {
         const original = selected[0];
         let pool =
           host === "codex"
@@ -380,7 +405,9 @@ export async function main(
             : { ...original, home: ".claude" };
         const args = shortcut
           ? shortcutArguments(host as "codex" | "claude", pool.args ?? [], runArgs, safe)
-          : [];
+          : command === "run"
+            ? [...(pool.args ?? []), ...runArgs]
+            : [];
         if (dryRun) {
           print(
             JSON.stringify({ command: [host, ...args], home: pool.home, profileOverride: null }),
@@ -419,19 +446,19 @@ export async function main(
               : options.has("--account")
                 ? accountAt(pool, options.get("--account") as string)
                 : undefined;
-          if (!account) {
-            const listing =
-              host === "codex"
-                ? await deps.listNativeCodex(original, directory, deps.home)
-                : await deps.listClaude(pool, { home: deps.home, local: true });
+          if (!account && host === "codex") {
+            const listing = await deps.listNativeCodex(original, directory, deps.home);
+            const sources = await deps.codexSources(original, directory, deps.home);
+            if (shortcut) {
+              await addUsage({ ...sources, home: ".codex" }, listing, deps);
+              account = selectCodexAccount(pool.accounts, listing.accounts, pool.selection);
+            } else account = listing.current;
+            if (!account) throw new PoolError("account_current_not_in_pool");
+          } else if (!account) {
+            const listing = await deps.listClaude(pool, { home: deps.home, local: true });
             account = listing.current;
-            if (!account && original.home !== pool.home) {
-              const prior =
-                host === "codex"
-                  ? await deps.listCodex(original, deps.home)
-                  : await deps.listClaude(original, { home: deps.home, local: true });
-              account = prior.current;
-            }
+            if (!account && original.home !== pool.home)
+              account = (await deps.listClaude(original, { home: deps.home, local: true })).current;
             if (!account) throw new PoolError("account_current_not_in_pool");
           }
           if (host === "codex") {
@@ -446,8 +473,10 @@ export async function main(
               home: deps.home,
               nativeBackup: original.home !== pool.home,
             });
-          if (command === "run")
+          if (command === "run") {
+            if (host === "codex") await deps.verifyCodex(pool, account, deps.home);
             return await deps.launch(host, { ...pool, args: [] }, args, deps.home);
+          }
           print("Codex: profile selected. Open sessions keep their current login.");
         }
         continue;
@@ -519,7 +548,11 @@ export async function main(
     if (!found) throw new PoolError(options.has("--pool") ? "pool_unknown" : "pool_config_missing");
     return 0;
   } catch (error) {
-    report(`has: ${errorCode(error)}`);
+    report(
+      errorCode(error) === "no_available_account"
+        ? "has: no_available_account — 사용 가능한 계정 없음. Wait for usage to reset or select an account explicitly."
+        : `has: ${errorCode(error)}`,
+    );
     return 1;
   }
 }
