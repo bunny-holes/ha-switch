@@ -181,14 +181,14 @@ function login(v: unknown): Login | undefined {
   if (
     !item ||
     typeof item.accessToken !== "string" ||
-    !item.accessToken ||
     typeof item.refreshToken !== "string" ||
-    !item.refreshToken ||
     typeof item.expiresAt !== "number" ||
     !Number.isFinite(item.expiresAt) ||
     Math.abs(item.expiresAt) > 8.64e15
   )
     throw new PoolError("claude_credential_invalid");
+  if (!item.accessToken && !item.refreshToken) return undefined;
+  if (!item.accessToken || !item.refreshToken) throw new PoolError("claude_credential_invalid");
   return item as Login;
 }
 function account(v: unknown): Account | undefined {
@@ -490,6 +490,7 @@ export async function listClaudeAccounts(
   const deps = { ...defaults(), ...overrides };
   const state = await copies(pool, deps);
   const native = state.native.find((s) => s.service === credentialService(pool.home, deps.home));
+  const nativeLogin = native && login(native.item.claudeAiOauth);
   const accounts: AccountRow[] = [];
   let current: string | undefined;
   for (const [i, label] of pool.accounts.entries()) {
@@ -498,7 +499,8 @@ export async function listClaudeAccounts(
       const dir = pool.from?.[label] ?? (label.startsWith(".claude") ? label : undefined);
       if (dir) s = state.native.find((n) => n.service === credentialService(dir, deps.home));
     }
-    if (s && identity(s) && native && identity(s) === identity(native)) current ??= label;
+    if (s && identity(s) && native && nativeLogin && identity(s) === identity(native))
+      current ??= label;
     let token = s ? login(s.item.claudeAiOauth) : undefined;
     if (s && identity(s)) {
       for (const candidate of [...state.native, ...state.stored]) {

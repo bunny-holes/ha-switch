@@ -153,6 +153,75 @@ describe("Claude macOS account swapping", () => {
     expect(f.reads).toHaveLength(4);
     expect(f.writes).toHaveLength(0);
   });
+  test("cleared native login keeps its saved account available for listing and switching", async () => {
+    const f = fixture();
+    const scoped: Pool = {
+      name: "team",
+      home: ".claude",
+      accounts: ["personal", "work"],
+      from: { personal: ".claude", work: ".claude-work" },
+    };
+    f.setProfile(".claude", "fixture-a", "a");
+    f.setProfile(".claude-work", "fixture-b", "b");
+    const source = credentialService(".claude-work", home);
+    const cleared = JSON.stringify({
+      claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 },
+      mcpOAuth: { fixture: "preserve" },
+      future: "keep",
+    });
+    f.keys.set(source, cleared);
+    f.keys.set("ha-switch:claude-account:personal", JSON.stringify(snap("fixture-a", "a")));
+    f.keys.set("ha-switch:claude-account:work", JSON.stringify(snap("fixture-b", "b")));
+    f.deps.fetch = async () => {
+      throw new Error("local_list_must_not_query_usage");
+    };
+    const listing = await listClaudeAccounts(scoped, { ...f.deps, local: true });
+    expect(listing.current).toBe("personal");
+    expect(listing.accounts.map((row) => row.authenticated)).toEqual([true, true]);
+    expect(f.writes).toHaveLength(0);
+    await useClaudeAccount(scoped, "work", f.deps);
+    const active = JSON.parse(f.keys.get(credentialService(".claude", home)) as string);
+    expect(active.claudeAiOauth.accessToken === "fixture-access-b").toBe(true);
+    expect(active.mcpOAuth).toEqual({ fixture: "preserve" });
+    expect(f.keys.get(source) === cleared).toBe(true);
+  });
+  test("cleared current login has no current marker and cannot supply an unsigned account", async () => {
+    const f = fixture();
+    const scoped: Pool = {
+      name: "team",
+      home: ".claude",
+      accounts: ["personal", "work"],
+      from: { personal: ".claude", work: ".claude-work" },
+    };
+    f.setProfile(".claude", "fixture-a", "a");
+    f.setProfile(".claude-work", "fixture-b", "b");
+    f.keys.set(
+      credentialService(".claude", home),
+      JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0 } }),
+    );
+    const listing = await listClaudeAccounts(scoped, { ...f.deps, local: true });
+    expect(listing.current).toBeUndefined();
+    expect(listing.accounts.map((row) => row.authenticated)).toEqual([false, true]);
+    await expect(useClaudeAccount(scoped, "personal", f.deps)).rejects.toMatchObject({
+      code: "account_not_signed_in",
+    });
+    expect(f.writes).toHaveLength(0);
+  });
+  test("partly cleared or malformed logins remain invalid before writes", async () => {
+    for (const invalid of [
+      { ...token("a"), accessToken: "" },
+      { ...token("a"), refreshToken: "" },
+      { accessToken: "", refreshToken: "", expiresAt: "invalid" },
+    ]) {
+      const f = fixture();
+      f.setProfile(".claude", "fixture-a", "a");
+      f.keys.set(credentialService(".claude", home), JSON.stringify({ claudeAiOauth: invalid }));
+      await expect(useClaudeAccount(pool, "work", f.deps)).rejects.toMatchObject({
+        code: "claude_credential_invalid",
+      });
+      expect(f.writes).toHaveLength(0);
+    }
+  });
   test("two configured profiles avoid global scans and redundant reads", async () => {
     const scoped: Pool = {
       name: "team",
