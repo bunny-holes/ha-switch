@@ -248,9 +248,6 @@ async function copies(pool: Pool, deps: ClaudeDependencies) {
       pool.home,
       ...pool.accounts.filter((label) => label.startsWith(".claude")),
       ...Object.values(pool.from ?? {}),
-      ...(await deps.profiles(deps.home))
-        .filter((p) => p.host === "claude")
-        .map((p) => p.directory),
     ]),
   ];
   const native = await Promise.all(directories.map((d) => profile(d, deps)));
@@ -279,8 +276,11 @@ export async function captureClaudeAccount(
     deps,
   );
 }
-async function importAccounts(pool: Pool, deps: ClaudeDependencies) {
-  const state = await copies(pool, deps);
+async function importAccounts(
+  pool: Pool,
+  deps: ClaudeDependencies,
+  state: Awaited<ReturnType<typeof copies>>,
+) {
   const changes: { source: Snapshot; target: Snapshot }[] = [];
   for (const [i, label] of pool.accounts.entries()) {
     const target = state.stored[i];
@@ -291,7 +291,10 @@ async function importAccounts(pool: Pool, deps: ClaudeDependencies) {
     if (source && identity(source) && login(source.item.claudeAiOauth))
       changes.push({ source, target });
   }
-  for (const s of [...state.native, ...state.stored]) await unchanged(s, deps);
+  for (const { source, target } of changes) {
+    await unchanged(source, deps);
+    await unchanged(target, deps);
+  }
   for (const { source, target } of changes) {
     await unchanged(source, deps);
     await writeSnapshot(
@@ -301,16 +304,13 @@ async function importAccounts(pool: Pool, deps: ClaudeDependencies) {
     );
   }
 }
-export async function syncAccounts(
+async function synchronize(
   pool: Pool,
-  overrides: Partial<ClaudeDependencies> = {},
+  deps: ClaudeDependencies,
+  state: Awaited<ReturnType<typeof copies>>,
 ): Promise<Snapshot[]> {
-  const deps = { ...defaults(), ...overrides };
-  validateClaudePools({ [pool.name]: pool });
-  await importAccounts(pool, deps);
-  const state = await copies(pool, deps);
+  await importAccounts(pool, deps, state);
   const all = [...state.native, ...state.stored];
-  for (const s of all) await unchanged(s, deps);
   for (const target of all) {
     const id = identity(target);
     const own = login(target.item.claudeAiOauth);
@@ -336,6 +336,13 @@ export async function syncAccounts(
   }
   return all;
 }
+export async function syncAccounts(
+  pool: Pool,
+  overrides: Partial<ClaudeDependencies> = {},
+): Promise<Snapshot[]> {
+  const deps = { ...defaults(), ...overrides };
+  return synchronize(pool, deps, await copies(pool, deps));
+}
 async function switchTo(
   pool: Pool,
   target: Snapshot,
@@ -355,7 +362,6 @@ async function switchTo(
   if (freshnessSource) await unchanged(freshnessSource, deps);
   await unchanged(target, deps);
   await unchanged(previous, deps);
-  await unchanged(saved, deps);
   if (backup)
     await writeSnapshot(
       saved,
@@ -364,7 +370,6 @@ async function switchTo(
     );
   if (freshnessSource) await unchanged(freshnessSource, deps);
   await unchanged(target, deps);
-  await unchanged(previous, deps);
   const priorLogin = previous.item.claudeAiOauth;
   await writeSnapshot(
     previous,
@@ -396,16 +401,16 @@ export async function useClaudeAccount(
   if (!pool.accounts.includes(label)) throw new PoolError("account_not_in_pool");
   const deps = { ...defaults(), ...overrides };
   // Validate source before any imports or synchronizing writes.
-  let target = await read(STORE + label, deps);
+  const state = await copies(pool, deps);
+  const target = state.stored[pool.accounts.indexOf(label)] as Snapshot;
   if (!identity(target) || !login(target.item.claudeAiOauth)) {
     const dir = pool.from?.[label] ?? (label.startsWith(".claude") ? label : undefined);
     if (!dir) throw new PoolError("account_not_stored");
-    const source = await profile(dir, deps);
-    if (!identity(source) || !login(source.item.claudeAiOauth))
+    const source = state.native.find((s) => s.service === credentialService(dir, deps.home));
+    if (!source || !identity(source) || !login(source.item.claudeAiOauth))
       throw new PoolError("account_not_signed_in");
   }
-  await syncAccounts(pool, deps);
-  target = await read(STORE + label, deps);
+  await synchronize(pool, deps, state);
   await switchTo(pool, target, deps, true);
 }
 export async function restoreClaudeBackup(
@@ -494,7 +499,14 @@ export async function listClaudeAccounts(
       if (dir) s = state.native.find((n) => n.service === credentialService(dir, deps.home));
     }
     if (s && identity(s) && native && identity(s) === identity(native)) current ??= label;
-    const token = s ? login(s.item.claudeAiOauth) : undefined;
+    let token = s ? login(s.item.claudeAiOauth) : undefined;
+    if (s && identity(s)) {
+      for (const candidate of [...state.native, ...state.stored]) {
+        if (identity(candidate) !== identity(s)) continue;
+        const held = login(candidate.item.claudeAiOauth);
+        if (held && (!token || held.expiresAt > token.expiresAt)) token = held;
+      }
+    }
     const allowed = new Set(["free", "pro", "max", "team", "enterprise"]);
     const p = typeof token?.subscriptionType === "string" ? token.subscriptionType : "";
     const plan = allowed.has(p) ? p : null;

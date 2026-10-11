@@ -22,7 +22,6 @@ export async function localProfiles(home = homedir()): Promise<Profile[]> {
       try {
         if ((await stat(join(home, name))).isDirectory()) {
           profiles.push({ host, directory: name });
-          break;
         }
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;

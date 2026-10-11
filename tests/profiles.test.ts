@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { initConfiguration } from "../src/config.ts";
 import { localProfiles, profileEnvironment } from "../src/profiles.ts";
 
 test("profile discovery uses directory metadata without opening credentials", async () => {
@@ -41,4 +42,37 @@ test("default Claude path stays unset even when configured as absolute", () => {
     join(home, "custom"),
   );
   expect(base.CLAUDE_CONFIG_DIR).toBe("other");
+});
+
+test("discovery includes every extra profile while init excludes the Codex switch target", async () => {
+  const home = await mkdtemp(join(tmpdir(), "ha-switch-test-"));
+  try {
+    for (const directory of [
+      ".codex",
+      ".codex-account-a",
+      ".codex-account-b",
+      ".codex-ha-switch",
+      ".claude-account-a",
+      ".claude-account-b",
+    ]) {
+      await mkdir(join(home, directory));
+    }
+    const profiles = await localProfiles(home);
+    expect(
+      profiles.filter((profile) => profile.host === "codex").map((profile) => profile.directory),
+    ).toEqual([".codex", ".codex-account-a", ".codex-account-b", ".codex-ha-switch"]);
+    expect(
+      profiles.filter((profile) => profile.host === "claude").map((profile) => profile.directory),
+    ).toEqual([".claude", ".claude-account-a", ".claude-account-b"]);
+    const configuration = join(home, "configuration");
+    await initConfiguration(configuration, home);
+    expect(await Bun.file(join(configuration, "codex-pools.json")).json()).toEqual({
+      default: {
+        home: ".codex-ha-switch",
+        accounts: [".codex", ".codex-account-a", ".codex-account-b"],
+      },
+    });
+  } finally {
+    await rm(home, { recursive: true });
+  }
 });

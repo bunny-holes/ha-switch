@@ -132,13 +132,16 @@ Pool configuration stores paths and labels, never login tokens.
 Run `list codex`, `list claude`, or `list agy` after switching. The current account has a check mark.
 `list --local` skips network requests and login synchronization.
 Normal Codex listing can refresh expired logins and synchronize their saved copies.
-Claude listing synchronizes saved copies; use Claude itself to refresh an expired login.
+Claude listing reads logins without changing them. Use `sync claude` to synchronize saved copies,
+and Claude itself to refresh an expired login.
 
 ## Data and limits
 
 Codex copies native `auth.json` login data into the target profile and queries usage through the
 installed app-server. Claude and Antigravity use their native macOS keychain formats. Saved logins
 and login backups are kept in the keychain. No custom encrypted vault is created.
+Claude keeps one login copy per saved account and one restore copy per pool.
+These copies let it preserve an account when the target profile's login changes.
 Profile directories are not replaced. Settings, plugins, MCP credentials, and history stay in place.
 An already-running agent process can retain the login it loaded. Use the switched account on the
 next native launch.

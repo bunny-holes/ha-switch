@@ -166,6 +166,64 @@ test("Claude switch, sync and restore use only their named adapters", async () =
   expect(await main(["restore", "claude"], f.deps)).toBe(0);
   expect(f.events).toEqual(["claude-switch:account-a", "claude-sync", "claude-restore"]);
 });
+test("normal Claude list calls only its read-only listing adapter and keeps usage columns", async () => {
+  const f = fixture();
+  f.deps.listClaude = async (_pool, options) => {
+    expect(options?.local).toBe(false);
+    f.events.push("claude-list");
+    return {
+      current: "account-a",
+      accounts: [
+        {
+          account: "account-a",
+          plan: "plus",
+          resetCredits: 0,
+          rateLimits: {
+            primary: { windowDurationMins: 300, usedPercent: 25, resetsAt: 2000000000 },
+            secondary: { windowDurationMins: 10080, usedPercent: 10, resetsAt: 2000001000 },
+          },
+        },
+      ],
+    };
+  };
+  f.deps.syncClaude = async () => {
+    throw new Error("unexpected synchronization");
+  };
+  f.deps.useClaude = async () => {
+    throw new Error("unexpected switch");
+  };
+  expect(await main(["list", "claude"], f.deps)).toBe(0);
+  expect(f.events).toEqual(["claude-list"]);
+  for (const field of [
+    "plan",
+    "5-hour left",
+    "5-hour resets",
+    "weekly left",
+    "weekly resets",
+    "reset credits",
+    "75%",
+    "90%",
+    "plus",
+  ])
+    expect(f.output[0]).toContain(field);
+  expect(f.output[0]).toMatch(/account-a.*\s0$/m);
+});
+test("Claude switch and selected run avoid redundant synchronization", async () => {
+  const f = fixture();
+  f.deps.syncClaude = async () => {
+    throw new Error("unexpected synchronization");
+  };
+  expect(await main(["switch", "claude", "2"], f.deps)).toBe(0);
+  expect(f.events).toEqual(["claude-switch:account-b"]);
+  f.events.length = 0;
+  expect(await main(["run", "claude", "--account", "1"], f.deps)).toBe(7);
+  expect(f.events).toEqual(["claude-switch:account-a", "run:"]);
+});
+test("Claude run without account synchronizes once before launch", async () => {
+  const f = fixture();
+  expect(await main(["run", "claude"], f.deps)).toBe(7);
+  expect(f.events).toEqual(["claude-sync", "run:"]);
+});
 test("unknown exceptions do not reveal messages", async () => {
   const f = fixture();
   f.deps.readPools = async () => {

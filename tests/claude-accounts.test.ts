@@ -39,11 +39,13 @@ function fixture() {
   const keys = new Map<string, string>();
   const files = new Map<string, Record<string, unknown>>();
   const writes: string[] = [];
+  const reads: string[] = [];
   let readHook: ((service: string) => void) | undefined;
   const deps: ClaudeDependencies = {
     home,
     keychain: {
       async read(s) {
+        reads.push(s);
         readHook?.(s);
         return keys.get(s);
       },
@@ -88,6 +90,7 @@ function fixture() {
     keys,
     files,
     writes,
+    reads,
     deps,
     setProfile,
     onRead: (h: typeof readHook) => {
@@ -96,6 +99,89 @@ function fixture() {
   };
 }
 describe("Claude macOS account swapping", () => {
+  test("first list uses configured native profiles before HA snapshots exist", async () => {
+    const f = fixture();
+    const scoped: Pool = {
+      name: "team",
+      home: ".claude",
+      accounts: ["personal", "work"],
+      from: { personal: ".claude", work: ".claude-work" },
+    };
+    f.setProfile(".claude", "fixture-a", "a");
+    f.setProfile(".claude-work", "fixture-b", "b");
+    const listing = await listClaudeAccounts(scoped, f.deps);
+    expect(listing.current).toBe("personal");
+    expect(listing.accounts.map((row) => row.authenticated)).toEqual([true, true]);
+    expect(listing.accounts.map((row) => row.plan)).toEqual(["max", "max"]);
+    expect(listing.accounts.map((row) => row.resetCredits)).toEqual([2, 2]);
+    expect(listing.accounts.map((row) => row.rateLimits?.primary?.usedPercent)).toEqual([25, 25]);
+    expect(f.reads).toHaveLength(4);
+    expect(f.reads.some((service) => service.startsWith("toolbox:"))).toBe(false);
+    expect(f.writes).toHaveLength(0);
+  });
+  test("readonly list queries fresh native login when the saved copy has expired", async () => {
+    const f = fixture();
+    const scoped: Pool = {
+      name: "team",
+      home: ".claude",
+      accounts: ["personal", "work"],
+      from: { personal: ".claude", work: ".claude-work" },
+    };
+    f.setProfile(".claude", "fixture-a", "fresh");
+    f.setProfile(".claude-work", "fixture-b", "b");
+    f.keys.set(
+      "ha-switch:claude-account:personal",
+      JSON.stringify(snap("fixture-a", "expired", 1)),
+    );
+    f.keys.set("ha-switch:claude-account:work", JSON.stringify(snap("fixture-b", "b")));
+    let freshQueried = false;
+    f.deps.fetch = async (_input, options) => {
+      if (new Headers(options?.headers).get("Authorization") === "Bearer fixture-access-fresh")
+        freshQueried = true;
+      return new Response(
+        JSON.stringify({
+          five_hour: { utilization: 25 },
+          cedar_ember: { eligible: true, grants: [{ resets_left: 2 }] },
+        }),
+      );
+    };
+    const listing = await listClaudeAccounts(scoped, f.deps);
+    expect(freshQueried).toBe(true);
+    expect(listing.accounts[0]?.resetError).toBeUndefined();
+    expect(listing.accounts[0]?.resetCredits).toBe(2);
+    expect(listing.accounts[0]?.rateLimits?.primary?.usedPercent).toBe(25);
+    expect(f.reads).toHaveLength(4);
+    expect(f.writes).toHaveLength(0);
+  });
+  test("two configured profiles avoid global scans and redundant reads", async () => {
+    const scoped: Pool = {
+      name: "team",
+      home: ".claude",
+      accounts: ["personal", "work"],
+      from: { personal: ".claude", work: ".claude-work" },
+    };
+    for (const operation of ["list-local", "list", "sync", "switch"] as const) {
+      const f = fixture();
+      f.setProfile(".claude", "fixture-a", "a");
+      f.setProfile(".claude-work", "fixture-b", "b");
+      f.keys.set("ha-switch:claude-account:personal", JSON.stringify(snap("fixture-a", "a")));
+      f.keys.set("ha-switch:claude-account:work", JSON.stringify(snap("fixture-b", "b")));
+      f.deps.profiles = async () => {
+        throw new Error("global_profile_scan_forbidden");
+      };
+      if (operation === "list-local") await listClaudeAccounts(scoped, { ...f.deps, local: true });
+      if (operation === "list") await listClaudeAccounts(scoped, f.deps);
+      if (operation === "sync") await syncAccounts(scoped, f.deps);
+      if (operation === "switch") await useClaudeAccount(scoped, "work", f.deps);
+      expect(f.reads.length).toBe(operation === "switch" ? 11 : 4);
+      expect(new Set(f.reads).size).toBe(operation === "switch" ? 5 : 4);
+      expect(
+        f.writes.filter(
+          (path) => path.startsWith("ha-switch:") || path.startsWith("Claude Code-credentials"),
+        ).length,
+      ).toBe(operation === "switch" ? 2 : 0);
+    }
+  });
   test("profile paths reject every ASCII control byte and allow ordinary Unicode", () => {
     for (const code of [...Array.from({ length: 32 }, (_, index) => index), 127]) {
       const path = `.claude-${String.fromCharCode(code)}fixture`;
@@ -218,6 +304,20 @@ describe("Claude macOS account swapping", () => {
       code: "profile_changed",
     });
     expect(g.writes).toHaveLength(0);
+  });
+  test("switch rejects changed destination before writing its backup", async () => {
+    const f = fixture();
+    f.setProfile(".claude", "fixture-a", "a");
+    f.keys.set("ha-switch:claude-account:personal", JSON.stringify(snap("fixture-b", "b")));
+    let reads = 0;
+    f.onRead((service) => {
+      if (service === "ha-switch:claude-account:personal" && ++reads === 2)
+        f.keys.set(service, JSON.stringify(snap("fixture-c", "c")));
+    });
+    await expect(
+      useClaudeAccount({ ...pool, from: undefined }, "personal", f.deps),
+    ).rejects.toMatchObject({ code: "profile_changed" });
+    expect(f.writes).toHaveLength(0);
   });
   test("metadata write failure rolls back login while retaining unrelated keys", async () => {
     const f = fixture();

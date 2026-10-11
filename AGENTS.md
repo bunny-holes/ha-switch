@@ -25,6 +25,7 @@ The Bun executable is published as `@bunny-holes/ha-switch` and runs with `bunx`
 - Preserve existing permissions and keychain access controls. Use atomic file replacement.
 - Keep source accounts separate from a Codex pool target so switching cannot destroy an account source.
 - Recheck affected state before writes; report detected changes instead of overwriting another login.
+- Read credentials only for configured profiles. Reuse reads within a command and recheck write participants before changing them.
 - Use the native Codex app-server for usage queries. Never start a model request to read account usage.
 - Display remaining usage, reset times, and reset credits; distinguish zero, unknown, and query failure.
 - Log safe boundary events with `[ha-switch:module:action]`; default to `warn`.
