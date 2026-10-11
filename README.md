@@ -1,11 +1,4 @@
----
-uuid: 01a129d8-4ffd-70be-80f2-0b071d3cecc9
-type: guide
-audience: People switching between saved work and personal coding-agent accounts.
-goal: List and switch Codex, Claude Code, and Antigravity accounts on macOS with Bun.
-tone: Plain English with short instructions and exact commands.
-manner: Explain account behavior and data boundaries before development details.
----
+
 
 <div align="center">
 

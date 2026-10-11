@@ -4,38 +4,15 @@ import { basename, join, resolve } from "node:path";
 import { pack } from "./build.ts";
 
 const root = resolve(import.meta.dir, "..");
-const documentKeys = ["uuid", "type", "audience", "goal", "tone", "manner"] as const;
-
-// Repository documents keep six top-level keys. Portable skills carry those
-// same values in the standard metadata map, preserving their source identity.
-export function portableSkill(source: string): string {
-  const front = /^---\n([\s\S]*?)\n---\n/.exec(source);
-  if (!front) throw new Error("skill_front_matter_missing");
-  const parsed = Bun.YAML.parse(front[1]);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-    throw new Error("skill_front_matter_invalid");
-  const fields = { ...parsed } as Record<string, unknown>;
+// Repository Markdown has no front matter. Only the installable skill receives
+// the native discovery fields from its JSON metadata.
+export function portableSkill(source: string, metadata: unknown): string {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
+    throw new Error("skill_metadata_invalid");
+  const fields = { ...metadata } as Record<string, unknown>;
   if (fields.name !== "has" || typeof fields.description !== "string" || !fields.description.trim())
     throw new Error("skill_identity_invalid");
-  const metadata: Record<string, string> = {};
-  for (const key of documentKeys) {
-    const value = fields[key];
-    if (typeof value !== "string" || !value.trim()) throw new Error("skill_document_key_missing");
-    metadata[key] = value;
-    delete fields[key];
-  }
-  const existing = fields.metadata;
-  if (existing !== undefined) {
-    if (!existing || typeof existing !== "object" || Array.isArray(existing))
-      throw new Error("skill_metadata_invalid");
-    for (const [key, value] of Object.entries(existing)) {
-      if (typeof value !== "string" || Object.hasOwn(metadata, key))
-        throw new Error("skill_metadata_invalid");
-      metadata[key] = value;
-    }
-  }
-  fields.metadata = metadata;
-  return `---\n${Bun.YAML.stringify(fields, null, 2).trimEnd()}\n---\n${source.slice(front[0].length)}`;
+  return `---\n${Bun.YAML.stringify(fields, null, 2).trimEnd()}\n---\n${source}`;
 }
 
 export async function buildRelease(destination: string): Promise<string[]> {
@@ -55,7 +32,10 @@ export async function buildRelease(destination: string): Promise<string[]> {
     await mkdir(join(stage, "has", "agents"), { recursive: true });
     await Bun.write(
       join(stage, "has", "SKILL.md"),
-      portableSkill(await Bun.file(join(root, "skills/has/SKILL.md")).text()),
+      portableSkill(
+        await Bun.file(join(root, "skills/has/SKILL.md")).text(),
+        await Bun.file(join(root, "skills/has/skill.json")).json(),
+      ),
     );
     await cp(join(root, "skills/has/agents/openai.yaml"), join(stage, "has/agents/openai.yaml"));
     await cp(join(root, "LICENSE"), join(stage, "has/LICENSE"));

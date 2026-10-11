@@ -1,14 +1,4 @@
----
-name: has
-description: List profiles and usage or switch saved Codex, Claude Code, and Antigravity CLI accounts on macOS with the has command. Use for HA Switch account tasks, not signing in to a new account.
-license: MIT
-uuid: 01a12a9d-b6e1-7545-80a2-c46b4a245d18
-type: instructions
-audience: Coding agents using the installed HA Switch CLI on the user's Mac.
-goal: List or switch saved accounts through has while preserving native login data and settings.
-tone: Short English instructions with exact commands and explicit account choices.
-manner: Use the standalone CLI and respect the user's requested tool, profile, and write scope.
----
+
 
 # HA Switch
 

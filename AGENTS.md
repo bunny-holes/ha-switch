@@ -1,11 +1,4 @@
----
-uuid: 01a129d8-4ffc-7146-8e62-98a10a92c0c2
-type: instructions
-audience: Agents working on the HA Switch source repository.
-goal: Switch saved accounts on macOS while preserving native settings and unrelated credentials.
-tone: Direct English instructions with one rule per item.
-manner: State boundaries and checks without machine-specific or organization-specific rules.
----
+
 
 # HA Switch repository
 
@@ -33,7 +26,7 @@ The Bun executable is published as `@bunny-holes/ha-switch` and runs with `bunx`
 - Use invented account labels, fake keychains, and temporary homes in tests.
 - Verify live adapters with reversible synthetic credentials; never switch the developer's login during tests.
 - Run `bun run format` for formatting and import cleanup, then `bun run check`.
-- Apply dadeumi's write skill to Markdown and preserve each document's six-key front matter.
+- Keep repository Markdown without front matter. Store native skill metadata in JSON and add it only when building the installable skill.
 - Build in a temporary directory and publish only the executable, package metadata, README, and license.
 - Keep GitHub visibility private until the owner requests the final public transition.
 - Keep other workers' changes. Each worker edits only its assigned files.

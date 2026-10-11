@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { buildRelease } from "../scripts/release.ts";
 
-test("standalone skill release preserves instructions and document identity and verifies its assets", async () => {
+test("standalone skill release preserves instructions and native metadata and verifies its assets", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "ha-switch-release-test-"));
   try {
     const assets = await buildRelease(join(temporary, "release"));
@@ -27,6 +27,7 @@ test("standalone skill release preserves instructions and document identity and 
     ]);
     expect(await readdir(join(temporary, "has/agents"))).toEqual(["openai.yaml"]);
     const source = await Bun.file(join(import.meta.dir, "../skills/has/SKILL.md")).text();
+    const metadata = await Bun.file(join(import.meta.dir, "../skills/has/skill.json")).json();
     const emitted = await Bun.file(join(temporary, "has/SKILL.md")).text();
     const split = (text: string) => {
       const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
@@ -36,19 +37,10 @@ test("standalone skill release preserves instructions and document identity and 
         body: text.slice(front[0].length),
       };
     };
-    const before = split(source);
     const after = split(emitted);
-    expect(after.body).toBe(before.body);
-    expect(Object.keys(after.fields).sort()).toEqual([
-      "description",
-      "license",
-      "metadata",
-      "name",
-    ]);
+    expect(after.body).toBe(source);
+    expect(after.fields).toEqual(metadata);
     expect(after.fields.name).toBe("has");
-    expect(after.fields.description).toBe(before.fields.description);
-    for (const key of ["uuid", "type", "audience", "goal", "tone", "manner"])
-      expect((after.fields.metadata as Record<string, unknown>)[key]).toBe(before.fields[key]);
     expect(await Bun.file(join(temporary, "has/LICENSE")).text()).toBe(
       await Bun.file(join(import.meta.dir, "../LICENSE")).text(),
     );

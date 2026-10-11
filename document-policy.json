@@ -1,5 +1,6 @@
 {
   "requireH1": true,
+  "exclude": ["**/*.md"],
   "fragments": [],
   "drop": ["id", "title", "status", "owner"]
 }

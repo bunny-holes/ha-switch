@@ -1,11 +1,4 @@
----
-uuid: 01a129d8-4ffd-70c0-a8df-760a6ac79b8e
-type: changelog
-audience: People checking changes in HA Switch before updating.
-goal: Identify available commands and account-switching behavior in each release.
-tone: Short English release entries stating observable behavior.
-manner: Record shipped functionality without local account or machine details.
----
+
 
 # Changelog
 

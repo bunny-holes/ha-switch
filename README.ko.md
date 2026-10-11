@@ -1,11 +1,4 @@
----
-uuid: 01a129d8-4ffd-70bf-bc03-991519f84579
-type: guide
-audience: 회사 계정과 개인 계정을 바꿔 쓰는 코딩 도구 사용자.
-goal: 맥에서 Bun으로 Codex·Claude Code·Antigravity 계정을 보고 바꾼다.
-tone: 짧은 평어체로 실행할 명령을 그대로 쓴다.
-manner: 계정 전환과 데이터 위치를 먼저 설명하고 개발 정보는 뒤에 둔다.
----
+
 
 <div align="center">
 
