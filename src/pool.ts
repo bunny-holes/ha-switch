@@ -84,13 +84,19 @@ export function profileDirectory(pool: PoolSpec, label: string, home = homedir()
 
 export async function listAccounts(pool: Pool, home = homedir()): Promise<AccountListing> {
   validatePool(pool, home);
-  const accounts = await Promise.all(
-    pool.accounts.map(async (account) => {
-      const auth = await readAuth(profileDirectory(pool, account, home), home);
-      return { account, plan: auth?.plan ?? null };
-    }),
+  const auths = await Promise.all(
+    pool.accounts.map((account) => readAuth(profileDirectory(pool, account, home), home)),
   );
-  return { current: await currentAccount(pool, home), accounts };
+  const held = (await readAuth(pool.home, home))?.account;
+  return {
+    current: held
+      ? pool.accounts.find((_account, index) => auths[index]?.account === held)
+      : undefined,
+    accounts: pool.accounts.map((account, index) => ({
+      account,
+      plan: auths[index]?.plan ?? null,
+    })),
+  };
 }
 
 export interface AuthSnapshot {
@@ -241,9 +247,10 @@ async function synchronize(
   home: string,
   directories: readonly string[],
   wrote?: (directory: string, text: string) => void,
+  configuredOnly = false,
 ): Promise<void> {
   log("sync_start");
-  const profiles = (await localProfiles(home))
+  const profiles = (configuredOnly ? [] : await localProfiles(home))
     .filter((profile) => profile.host === "codex")
     .map((profile) => profile.directory);
   const unique = [
@@ -270,7 +277,83 @@ export async function syncAll(
   await synchronize(home, directories);
 }
 
-export async function useAccount(pool: Pool, label: string, home = homedir()): Promise<void> {
+export function nativeCodexPool(pool: Pool, directory: string, home = homedir()): Pool {
+  validatePool(pool, home);
+  const from = { ...pool.from };
+  for (const label of pool.accounts) {
+    if (resolve(home, profileDirectory(pool, label, home)) === resolve(home, ".codex"))
+      from[label] = join(resolve(directory), "codex-accounts", "native");
+  }
+  return { ...pool, home: ".codex", from };
+}
+
+export async function codexPoolSources(
+  pool: Pool,
+  directory: string,
+  home = homedir(),
+): Promise<Pool> {
+  const native = nativeCodexPool(pool, directory, home);
+  const from = { ...pool.from };
+  for (const label of pool.accounts) {
+    const saved = profileDirectory(native, label, home);
+    if (
+      saved !== profileDirectory(pool, label, home) &&
+      (await Bun.file(join(saved, "auth.json")).exists())
+    )
+      from[label] = saved;
+  }
+  return { ...pool, from };
+}
+
+export async function listNativeCodexAccounts(
+  pool: Pool,
+  directory: string,
+  home = homedir(),
+): Promise<AccountListing> {
+  return listAccounts({ ...(await codexPoolSources(pool, directory, home)), home: ".codex" }, home);
+}
+
+export interface PreparedCodexPool {
+  pool: Pool;
+  expectedTarget: { text?: string };
+}
+
+export async function prepareNativeCodexPool(
+  pool: Pool,
+  label: string,
+  directory: string,
+  home = homedir(),
+): Promise<PreparedCodexPool> {
+  const native = nativeCodexPool(pool, directory, home);
+  const source = profileDirectory(native, label, home);
+  const originalLabel = pool.accounts.find(
+    (account) => resolve(home, profileDirectory(pool, account, home)) === resolve(home, ".codex"),
+  );
+  const previous = await readAuth(".codex", home);
+  const archive = originalLabel ? profileDirectory(native, originalLabel, home) : undefined;
+  const saved = archive ? await readAuth(archive, home) : undefined;
+  const selected = label === originalLabel && !saved ? previous : await readAuth(source, home);
+  if (!selected?.account) throw new PoolError("account_not_signed_in");
+  if (archive && !saved && previous?.account) {
+    const current = await readAuth(".codex", home);
+    if (current?.text !== previous.text) throw new PoolError("account_auth_changed");
+    const mode = (await stat(join(resolve(home, ".codex"), "auth.json"))).mode & 0o777;
+    await atomicWrite(join(archive, "auth.json"), previous.text, mode, { text: undefined });
+  }
+  return { pool: native, expectedTarget: { text: previous?.text } };
+}
+
+export interface CodexWriteOptions {
+  configuredOnly?: boolean;
+  expectedTarget?: { text?: string };
+}
+
+export async function useAccount(
+  pool: Pool,
+  label: string,
+  home = homedir(),
+  options: CodexWriteOptions = {},
+): Promise<void> {
   const sourceDirectory = profileDirectory(pool, label, home);
   const target = resolve(home, pool.home);
   if (
@@ -280,6 +363,8 @@ export async function useAccount(pool: Pool, label: string, home = homedir()): P
   if (!(await readAuth(sourceDirectory, home))?.account)
     throw new PoolError("account_not_signed_in");
   const before = await readAuth(pool.home, home);
+  if (options.expectedTarget && before?.text !== options.expectedTarget.text)
+    throw new PoolError("account_auth_changed");
   const authPath = join(target, "auth.json");
   const backup = `${authPath}.ha-switch-backup`;
   if (before && !(await Bun.file(backup).exists())) {
@@ -295,6 +380,7 @@ export async function useAccount(pool: Pool, label: string, home = homedir()): P
       (directory, text) => {
         if (resolve(home, directory) === target) installedText = text;
       },
+      options.configuredOnly,
     );
     const source = await readAuth(sourceDirectory, home);
     if (!source?.account) throw new PoolError("account_not_signed_in");
@@ -333,7 +419,11 @@ export async function currentAccount(pool: Pool, home = homedir()): Promise<stri
   return undefined;
 }
 
-export async function restoreAccount(pool: Pool, home = homedir()): Promise<boolean> {
+export async function restoreAccount(
+  pool: Pool,
+  home = homedir(),
+  options: { configuredOnly?: boolean } = {},
+): Promise<boolean> {
   validatePool(pool, home);
   const target = resolve(home, pool.home);
   if (
@@ -349,7 +439,7 @@ export async function restoreAccount(pool: Pool, home = homedir()): Promise<bool
     pool.home,
     ...pool.accounts.map((account) => profileDirectory(pool, account, home)),
   ];
-  await syncAll(home, directories);
+  await synchronize(home, directories, undefined, options.configuredOnly);
   const copies = await Promise.all(directories.map((directory) => readAuth(directory, home)));
   const refreshed = (auth: AuthSnapshot) => {
     const date = Date.parse(auth.refreshed ?? "");

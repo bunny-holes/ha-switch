@@ -26,15 +26,19 @@ import {
   validateHostPools,
 } from "./config.ts";
 import { errorCode, PoolError } from "./errors.ts";
+import { launch, shortcutArguments } from "./launch.ts";
 import {
+  codexPoolSources,
   listAccounts,
+  listNativeCodexAccounts,
+  nativeCodexPool,
+  prepareNativeCodexPool,
   profileDirectory,
   readPools,
   restoreAccount,
   syncAll,
   useAccount,
 } from "./pool.ts";
-import { profileEnvironment } from "./profiles.ts";
 import type { AccountListing, Pool, Pools } from "./types.ts";
 import { codexAccountUsage } from "./usage.ts";
 
@@ -44,16 +48,23 @@ Usage: has [OPTIONS]
 
 has                          Show help
 has --list                   List managed harnesses, profiles, and current selections
+has x                        Start Codex in ~/.codex with bypass flags
+has c                        Start Claude in ~/.claude with bypass flags
+has c -s 2                   Select Claude profile 2 and start it in ~/.claude
+has x --safe                 Omit bypass flags; native permission settings apply
+has switch 2                 Select Codex profile 2 in ~/.codex
 has -h c                     List Claude profiles
 has -h c -s 2                Switch Claude to profile 2
 has -c a personal            Save the current Antigravity login as personal
 
 --list                       List all configured harnesses or the selected harness
 -h, --harness HARNESS         c/claude, x/codex, a/antigravity (agy)
--s, --switch NUMBER           Switch the selected harness to the shown profile number
+-s, --switch NUMBER           Switch a harness; for x/c, select an account before launch
 -c, --create HARNESS          Save the current Antigravity login; a label is required
 --help                       Show help
 --version                    Show version
+--safe                       Omit bypass flags for x/c, including flags in pool args
+--dry-run                    Show x/c launch arguments without credential reads or writes
 
 Commands:
 
@@ -63,6 +74,10 @@ sync [codex|claude|agy] [--pool NAME]
 restore <codex|claude|agy> [--pool NAME]
 save agy <LABEL> [--pool NAME]
 run <codex|claude|agy> [--pool NAME] [--account NUMBER] [-- ARGS...]
+x|c [--pool NAME] [--account NUMBER|-s NUMBER] [--safe] [--dry-run] [-- ARGS...]
+switch [NUMBER] [--pool NAME] [--local]
+restore [--pool NAME]
+restore c [--pool NAME]       Restore the shortcut Claude home
 init
 import --from DIRECTORY
 
@@ -93,23 +108,6 @@ function hostForHarness(text: string): Host | undefined {
   );
 }
 
-async function launch(host: Host, pool: Pool, args: string[], home: string): Promise<number> {
-  const child = Bun.spawn([host, ...(pool.args ?? []), ...args], {
-    env:
-      host === "agy"
-        ? { ...process.env }
-        : profileEnvironment({ host, directory: pool.home }, home),
-    stdio: ["inherit", "inherit", "inherit"],
-  });
-  const ignoreInterrupt = () => {};
-  process.on("SIGINT", ignoreInterrupt);
-  try {
-    return await child.exited;
-  } finally {
-    process.off("SIGINT", ignoreInterrupt);
-  }
-}
-
 export interface CliDependencies {
   platform: NodeJS.Platform;
   home: string;
@@ -120,6 +118,9 @@ export interface CliDependencies {
   syncCodex: typeof syncAll;
   useCodex: typeof useAccount;
   restoreCodex: typeof restoreAccount;
+  prepareCodex: typeof prepareNativeCodexPool;
+  codexSources: typeof codexPoolSources;
+  listNativeCodex: typeof listNativeCodexAccounts;
   readUsage: typeof codexAccountUsage;
   listClaude: typeof listClaudeAccounts;
   syncClaude: typeof syncAccounts;
@@ -194,6 +195,9 @@ export async function main(
     syncCodex: syncAll,
     useCodex: useAccount,
     restoreCodex: restoreAccount,
+    prepareCodex: prepareNativeCodexPool,
+    codexSources: codexPoolSources,
+    listNativeCodex: listNativeCodexAccounts,
     readUsage: codexAccountUsage,
     listClaude: listClaudeAccounts,
     syncClaude: syncAccounts,
@@ -216,10 +220,18 @@ export async function main(
     const options = new Map<string, string>();
     let local = false;
     let list = false;
+    let safe = false;
+    let dryRun = false;
     for (let index = 0; index < input.length; index++) {
       const inputWord = input[index];
       const word = OPTION_ALIASES.get(inputWord) ?? inputWord;
-      if (word === "--local") {
+      if (word === "--safe") {
+        if (safe) throw new PoolError("duplicate_option");
+        safe = true;
+      } else if (word === "--dry-run") {
+        if (dryRun) throw new PoolError("duplicate_option");
+        dryRun = true;
+      } else if (word === "--local") {
         if (local) throw new PoolError("duplicate_option");
         local = true;
       } else if (word === "--list") {
@@ -247,6 +259,13 @@ export async function main(
     let hostText: string | undefined = positions[1];
     let number: string | undefined = positions[2];
     const extra = positions.slice(3);
+    const shortcut = command === "x" || command === "c";
+    let native = shortcut || (command === "restore" && hostText === "c");
+    if (shortcut && options.has("--switch")) {
+      if (options.has("--account")) throw new PoolError("duplicate_option");
+      options.set("--account", options.get("--switch") as string);
+      options.delete("--switch");
+    }
     if (options.has("--create")) {
       if (list || options.has("--harness") || options.has("--switch") || positions.length > 1)
         throw new PoolError("option_not_applicable");
@@ -260,6 +279,19 @@ export async function main(
       hostText = options.get("--harness");
       number = options.get("--switch");
     }
+    if (shortcut) {
+      if (positions.length !== 1) throw new PoolError("unknown_argument");
+      hostText = command === "x" ? "codex" : "claude";
+      command = "run";
+    } else if (
+      (command === "switch" && (hostText === undefined || /^\d+$/.test(hostText))) ||
+      (command === "restore" && hostText === undefined)
+    ) {
+      if (number !== undefined) throw new PoolError("unknown_argument");
+      number = hostText;
+      hostText = "codex";
+      native = true;
+    }
     if (extra.length) throw new PoolError("unknown_argument");
     if (!["list", "switch", "sync", "restore", "run", "init", "import", "save"].includes(command))
       throw new PoolError("unknown_command");
@@ -268,6 +300,7 @@ export async function main(
       (local && command !== "list") ||
       (options.has("--account") && command !== "run") ||
       (options.has("--from") && command !== "import") ||
+      ((safe || dryRun) && !shortcut) ||
       (separator >= 0 && command !== "run")
     )
       throw new PoolError("option_not_applicable");
@@ -331,14 +364,98 @@ export async function main(
           (options.has("--pool") && !Object.hasOwn(pools, options.get("--pool") as string)))
       )
         continue;
-      const selected = selectPools(
+      let selected = selectPools(
         pools,
         options.get("--pool"),
-        ["switch", "restore", "run"].includes(command),
+        native || ["switch", "restore", "run"].includes(command),
       );
       if (command === "run" && options.has("--account"))
         accountAt(selected[0], options.get("--account") as string);
       found = true;
+      if (native) {
+        const original = selected[0];
+        let pool =
+          host === "codex"
+            ? nativeCodexPool(original, directory, deps.home)
+            : { ...original, home: ".claude" };
+        const args = shortcut
+          ? shortcutArguments(host as "codex" | "claude", pool.args ?? [], runArgs, safe)
+          : [];
+        if (dryRun) {
+          print(
+            JSON.stringify({ command: [host, ...args], home: pool.home, profileOverride: null }),
+          );
+          return 0;
+        }
+        if (command === "list") {
+          const listing = await deps.listNativeCodex(original, directory, deps.home);
+          if (!local)
+            await addUsage(
+              { ...(await deps.codexSources(original, directory, deps.home)), home: ".codex" },
+              listing,
+              deps,
+            );
+          const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+          const configFlag = options.has("--config-dir") ? ` --config-dir ${quote(directory)}` : "";
+          print(
+            accountTable(pool, listing, {
+              title: `${HARNESSES[host].title} / ${pool.name}`,
+              command: `has --pool ${quote(pool.name)}${configFlag} switch`,
+            }),
+          );
+        } else if (command === "restore") {
+          if (host === "claude")
+            await deps.restoreClaude(pool, {
+              home: deps.home,
+              nativeBackup: original.home !== pool.home,
+            });
+          else if (!(await deps.restoreCodex(pool, deps.home, { configuredOnly: true })))
+            throw new PoolError("backup_missing");
+          print(`${HARNESSES[host].title}: previous login restored.`);
+        } else {
+          let account =
+            command === "switch"
+              ? accountAt(pool, number as string)
+              : options.has("--account")
+                ? accountAt(pool, options.get("--account") as string)
+                : undefined;
+          if (!account) {
+            const listing =
+              host === "codex"
+                ? await deps.listNativeCodex(original, directory, deps.home)
+                : await deps.listClaude(pool, { home: deps.home, local: true });
+            account = listing.current;
+            if (!account && original.home !== pool.home) {
+              const prior =
+                host === "codex"
+                  ? await deps.listCodex(original, deps.home)
+                  : await deps.listClaude(original, { home: deps.home, local: true });
+              account = prior.current;
+            }
+            if (!account) throw new PoolError("account_current_not_in_pool");
+          }
+          if (host === "codex") {
+            const prepared = await deps.prepareCodex(original, account, directory, deps.home);
+            pool = prepared.pool;
+            await deps.useCodex(pool, account, deps.home, {
+              configuredOnly: true,
+              expectedTarget: prepared.expectedTarget,
+            });
+          } else
+            await deps.useClaude(pool, account, {
+              home: deps.home,
+              nativeBackup: original.home !== pool.home,
+            });
+          if (command === "run")
+            return await deps.launch(host, { ...pool, args: [] }, args, deps.home);
+          print("Codex: profile selected. Open sessions keep their current login.");
+        }
+        continue;
+      }
+      if (host === "codex")
+        selected = await Promise.all(
+          selected.map((pool) => deps.codexSources(pool, directory, deps.home)),
+        );
       const directories = selected.flatMap((pool) => [
         pool.home,
         ...pool.accounts.map((account) => profileDirectory(pool, account, deps.home)),

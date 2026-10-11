@@ -44,6 +44,24 @@ test("default Claude path stays unset even when configured as absolute", () => {
   expect(base.CLAUDE_CONFIG_DIR).toBe("other");
 });
 
+test("default Codex path clears an inherited pool home without changing the parent environment", () => {
+  const home = join(tmpdir(), "ha-switch-synthetic-home");
+  const base = {
+    CODEX_HOME: join(home, ".codex-pkls"),
+    CLAUDE_CONFIG_DIR: "other",
+    PRESERVED: "value",
+  };
+  for (const directory of [".codex", join(home, ".codex")])
+    expect(profileEnvironment({ host: "codex", directory }, home, base)).toEqual({
+      CLAUDE_CONFIG_DIR: "other",
+      PRESERVED: "value",
+    });
+  expect(
+    profileEnvironment({ host: "codex", directory: ".codex-pkls" }, home, base).CODEX_HOME,
+  ).toBe(join(home, ".codex-pkls"));
+  expect(base.CODEX_HOME).toBe(join(home, ".codex-pkls"));
+});
+
 test("discovery includes every extra profile while init excludes the Codex switch target", async () => {
   const home = await mkdtemp(join(tmpdir(), "ha-switch-test-"));
   try {

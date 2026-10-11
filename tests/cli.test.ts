@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { version } from "../package.json";
 import { type CliDependencies, main } from "../src/cli.ts";
+import { nativeCodexPool } from "../src/pool.ts";
 import type { Pool, Pools } from "../src/types.ts";
 
 function fixture() {
@@ -18,6 +19,15 @@ function fixture() {
     listCodex: async () => ({
       current: "account-a",
       accounts: pool.accounts.map((account) => ({ account, plan: "plus" })),
+    }),
+    listNativeCodex: async () => ({
+      current: "account-a",
+      accounts: pool.accounts.map((account) => ({ account })),
+    }),
+    codexSources: async (configured) => configured,
+    prepareCodex: async (configured, _label, directory, home) => ({
+      pool: nativeCodexPool(configured, directory, home),
+      expectedTarget: {},
     }),
     listClaude: async (_pool, options) => {
       events.push(`claude-list:${options?.local}`);
@@ -560,4 +570,239 @@ test("Codex restore has a named missing-backup error", async () => {
   f.deps.restoreCodex = async () => false;
   expect(await main(["restore", "codex"], f.deps)).toBe(1);
   expect(f.errors).toEqual(["has: backup_missing"]);
+});
+
+test("shortcuts launch the selected account in the native home with pool and forwarded args", async () => {
+  for (const [shortcut, host, flags] of [
+    [
+      "x",
+      "codex",
+      ["--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust"],
+    ],
+    ["c", "claude", ["--dangerously-skip-permissions"]],
+  ] as const) {
+    const f = fixture();
+    f.deps.readPools = async () => ({
+      pkls: {
+        home: `.${host}-pkls`,
+        accounts: ["account-a", "account-b"],
+        args: ["-c", "model_reasoning_effort=medium"],
+      },
+    });
+    f.deps.listClaude = async () => ({
+      current: "account-b",
+      accounts: [{ account: "account-b" }],
+    });
+    f.deps.listNativeCodex = async () => ({
+      current: "account-b",
+      accounts: [{ account: "account-b" }],
+    });
+    f.deps.launch = async (nativeHost, configured, args) => {
+      expect(nativeHost).toBe(host);
+      expect(configured.home).toBe(`.${host}`);
+      expect(configured.args).toEqual([]);
+      expect(args).toEqual([
+        ...flags,
+        "-c",
+        "model_reasoning_effort=medium",
+        "resume",
+        "synthetic-session",
+      ]);
+      f.events.push("launch");
+      return 7;
+    };
+    expect(await main([shortcut, "--", "resume", "synthetic-session"], f.deps)).toBe(7);
+    expect(f.events).toEqual([`${host}-switch:account-b`, "launch"]);
+    expect(f.errors).toEqual([]);
+  }
+});
+
+test("shortcut account selection and safe mode work without prior account lookup", async () => {
+  const f = fixture();
+  f.deps.readPools = async () => ({
+    pkls: {
+      home: ".codex-pkls",
+      accounts: ["account-a", "account-b"],
+      args: ["--yolo", "-c", "web_search=live"],
+    },
+  });
+  f.deps.listCodex = async () => {
+    throw new Error("unexpected lookup");
+  };
+  f.deps.launch = async (_host, pool, args) => {
+    expect(pool.home).toBe(".codex");
+    expect(args).toEqual(["-c", "web_search=live", "resume", "synthetic-session"]);
+    return 0;
+  };
+  expect(
+    await main(["x", "--account", "2", "--safe", "--", "resume", "synthetic-session"], f.deps),
+  ).toBe(0);
+  expect(f.events).toEqual(["codex-switch:account-b"]);
+});
+
+test("shortcut prefers the native account and falls back only when it is unknown", async () => {
+  for (const nativeCurrent of ["account-a", undefined]) {
+    const f = fixture();
+    f.deps.readPools = async () => ({
+      pkls: { home: ".codex-pkls", accounts: ["account-a", "account-b"] },
+    });
+    f.deps.listCodex = async (pool) => ({
+      current: pool.home === ".codex-pkls" ? "account-b" : undefined,
+      accounts: [],
+    });
+    f.deps.listNativeCodex = async () => ({ current: nativeCurrent, accounts: [] });
+    expect(await main(["x"], f.deps)).toBe(7);
+    expect(f.events[0]).toBe(`codex-switch:${nativeCurrent ?? "account-b"}`);
+  }
+});
+
+test("shortcuts refuse unknown selections, invalid numbers and ambiguous pools before writes", async () => {
+  const f = fixture();
+  f.deps.listCodex = async () => ({ accounts: [] });
+  f.deps.listNativeCodex = async () => ({ accounts: [] });
+  expect(await main(["x"], f.deps)).toBe(1);
+  expect(f.errors).toEqual(["has: account_current_not_in_pool"]);
+  for (const shortcut of ["x", "c"]) {
+    expect(await main([shortcut, "--account", "0"], f.deps)).toBe(1);
+    expect(await main([shortcut, "--account", "3"], f.deps)).toBe(1);
+  }
+  f.deps.readPools = async () => ({
+    first: { home: "first", accounts: ["account-a"] },
+    second: { home: "second", accounts: ["account-b"] },
+  });
+  expect(await main(["x", "--account", "1"], f.deps)).toBe(1);
+  expect(f.events).toEqual([]);
+  expect(f.errors.at(-1)).toBe("has: pool_selection_required");
+  expect(await main(["x", "--pool", "second", "--account", "1"], f.deps)).toBe(7);
+  expect(f.events[0]).toBe("codex-switch:account-b");
+});
+
+test("shortcut dry-run only reads configuration and reports the assembled command", async () => {
+  for (const shortcut of ["x", "c"]) {
+    const f = fixture();
+    const unexpected = async (): Promise<never> => {
+      throw new Error("credential access");
+    };
+    f.deps.listCodex = unexpected;
+    f.deps.listNativeCodex = unexpected;
+    f.deps.codexSources = unexpected;
+    f.deps.prepareCodex = unexpected;
+    f.deps.listClaude = unexpected;
+    f.deps.useCodex = unexpected;
+    f.deps.useClaude = unexpected;
+    f.deps.launch = unexpected;
+    expect(
+      await main([shortcut, "--dry-run", "--safe", "--", "resume", "synthetic-session"], f.deps),
+    ).toBe(0);
+    expect(JSON.parse(f.output[0])).toEqual({
+      command: [shortcut === "x" ? "codex" : "claude", "resume", "synthetic-session"],
+      home: shortcut === "x" ? ".codex" : ".claude",
+      profileOverride: null,
+    });
+    expect(f.events).toEqual([]);
+    expect(f.errors).toEqual([]);
+  }
+});
+
+test("bare switch and restore manage the native Codex home while harness flags retain the legacy home", async () => {
+  const f = fixture();
+  f.deps.readPools = async () => ({
+    pkls: { home: ".codex-pkls", accounts: ["account-a", "account-b"] },
+  });
+  f.deps.useCodex = async (pool, account, _home, options) => {
+    f.events.push(`${pool.home}:${account}:${options?.configuredOnly === true}`);
+  };
+  f.deps.restoreCodex = async (pool, _home, options) => {
+    expect(pool.home).toBe(".codex");
+    expect(options?.configuredOnly).toBe(true);
+    return true;
+  };
+  expect(await main(["switch", "2"], f.deps)).toBe(0);
+  expect(await main(["restore"], f.deps)).toBe(0);
+  expect(await main(["-h", "x", "--pool", "pkls", "-s", "1"], f.deps)).toBe(0);
+  expect(f.events).toEqual([".codex:account-b:true", ".codex-pkls:account-a:false"]);
+  expect(await main(["switch", "--local", "--config-dir", "/test-config"], f.deps)).toBe(0);
+  expect(f.output.at(-1)).toContain(
+    "has --pool 'pkls' --config-dir '/test-config' switch <NUMBER>",
+  );
+});
+
+test("legacy Codex run keeps its pool home and does not inject shortcut flags", async () => {
+  const f = fixture();
+  f.deps.readPools = async () => ({
+    pkls: {
+      home: ".codex-pkls",
+      accounts: ["account-a", "account-b"],
+      args: ["--yolo", "-c", "web_search=live"],
+    },
+  });
+  f.deps.launch = async (_host, pool, args) => {
+    expect(pool.home).toBe(".codex-pkls");
+    expect(pool.args).toEqual(["--yolo", "-c", "web_search=live"]);
+    expect(args).toEqual(["resume", "synthetic-session"]);
+    return 0;
+  };
+  expect(
+    await main(["run", "codex", "--pool", "pkls", "--", "resume", "synthetic-session"], f.deps),
+  ).toBe(0);
+  expect(f.events).toEqual(["codex-sync"]);
+});
+
+test("shortcut-only options fail on legacy commands before local state access", async () => {
+  for (const args of [
+    ["run", "codex", "--safe"],
+    ["-h", "x", "--dry-run"],
+    ["x", "--safe", "--safe"],
+    ["x", "--dry-run", "--dry-run"],
+  ]) {
+    const f = fixture();
+    f.deps.readPools = async () => {
+      throw new Error("unexpected config read");
+    };
+    expect(await main(args, f.deps)).toBe(1);
+    expect(f.errors).toHaveLength(1);
+    expect(f.errors[0]).not.toBe("has: unexpected_error");
+    expect(f.events).toEqual([]);
+  }
+});
+
+test("-s selects an account only in shortcut run context and keeps harness switching unchanged", async () => {
+  for (const [shortcut, host] of [
+    ["c", "claude"],
+    ["x", "codex"],
+  ] as const) {
+    const f = fixture();
+    f.deps.readPools = async () => ({
+      pkls: { home: `.${host}-pkls`, accounts: ["account-a", "account-b"] },
+    });
+    expect(await main([shortcut, "-s", "2"], f.deps)).toBe(7);
+    expect(f.events[0]).toBe(`${host}-switch:account-b`);
+    expect(f.events[1]).toStartWith("run:");
+    f.events.length = 0;
+    expect(await main(["-h", shortcut, "-s", "2"], f.deps)).toBe(0);
+    expect(f.events).toEqual([`${host}-switch:account-b`]);
+    f.events.length = 0;
+    expect(await main([shortcut, "-s", "0"], f.deps)).toBe(1);
+    expect(await main([shortcut, "-s", "1", "--account", "2"], f.deps)).toBe(1);
+    expect(await main([shortcut, "-s", "1", "2", "3"], f.deps)).toBe(1);
+    expect(f.events).toEqual([]);
+  }
+});
+
+test("Claude shortcut backup and restore stay separate from the configured pool", async () => {
+  const f = fixture();
+  f.deps.readPools = async () => ({
+    pkls: { home: ".claude-pkls", accounts: ["account-a", "account-b"] },
+  });
+  f.deps.useClaude = async (pool, _account, options) => {
+    expect(pool.home).toBe(".claude");
+    expect(options?.nativeBackup).toBe(true);
+  };
+  f.deps.restoreClaude = async (pool, options) => {
+    expect(pool.home).toBe(options?.nativeBackup ? ".claude" : ".claude-pkls");
+    return { accountUuid: "synthetic" };
+  };
+  expect(await main(["c", "-s", "2"], f.deps)).toBe(7);
+  expect(await main(["restore", "c"], f.deps)).toBe(0);
+  expect(await main(["restore", "claude"], f.deps)).toBe(0);
 });

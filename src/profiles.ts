@@ -37,8 +37,10 @@ export function profileEnvironment(
   base = process.env,
 ): NodeJS.ProcessEnv {
   const env = { ...base };
-  if (profile.host === "codex") env.CODEX_HOME = resolve(home, profile.directory);
-  else if (resolve(home, profile.directory) === resolve(home, ".claude"))
+  if (profile.host === "codex") {
+    if (resolve(home, profile.directory) === resolve(home, ".codex")) delete env.CODEX_HOME;
+    else env.CODEX_HOME = resolve(home, profile.directory);
+  } else if (resolve(home, profile.directory) === resolve(home, ".claude"))
     delete env.CLAUDE_CONFIG_DIR;
   else env.CLAUDE_CONFIG_DIR = resolve(home, profile.directory);
   return env;

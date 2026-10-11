@@ -43,6 +43,7 @@ export interface ClaudeDependencies {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   now(): number;
   local?: boolean;
+  nativeBackup?: boolean;
 }
 const object = (v: unknown): Json | undefined =>
   v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Json) : undefined;
@@ -211,7 +212,12 @@ async function read(service: string, deps: ClaudeDependencies): Promise<Snapshot
     }
   }
   login(item.claudeAiOauth);
-  if (service.startsWith(STORE) || service.startsWith(LEGACY) || service.startsWith(BACKUP))
+  if (
+    service.startsWith(STORE) ||
+    service.startsWith(LEGACY) ||
+    service.startsWith(BACKUP) ||
+    service.startsWith("ha-switch:claude-native-backup:")
+  )
     account(item.oauthAccount);
   return { service, raw, item };
 }
@@ -343,6 +349,9 @@ export async function syncAccounts(
   const deps = { ...defaults(), ...overrides };
   return synchronize(pool, deps, await copies(pool, deps));
 }
+function backupService(pool: Pool, deps: ClaudeDependencies): string {
+  return deps.nativeBackup ? `ha-switch:claude-native-backup:${pool.name}` : BACKUP + pool.name;
+}
 async function switchTo(
   pool: Pool,
   target: Snapshot,
@@ -358,7 +367,7 @@ async function switchTo(
     identity(previous) === identity(target)
   )
     return;
-  const saved = await read(BACKUP + pool.name, deps);
+  const saved = await read(backupService(pool, deps), deps);
   if (freshnessSource) await unchanged(freshnessSource, deps);
   await unchanged(target, deps);
   await unchanged(previous, deps);
@@ -419,7 +428,7 @@ export async function restoreClaudeBackup(
 ): Promise<Account> {
   validateClaudePools({ [pool.name]: pool });
   const deps = { ...defaults(), ...overrides };
-  const saved = await read(BACKUP + pool.name, deps);
+  const saved = await read(backupService(pool, deps), deps);
   if (!identity(saved) || !login(saved.item.claudeAiOauth)) throw new PoolError("backup_missing");
   const state = await copies(pool, deps);
   const newest = [...state.native, ...state.stored]

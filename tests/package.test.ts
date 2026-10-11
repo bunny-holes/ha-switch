@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { version as manifestVersion } from "../package.json";
 import { pack } from "../scripts/build.ts";
+import { legacyRegression } from "./fixtures/legacy-regression.ts";
 
 test("packed executable works in an empty project without source files or state access", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "ha-switch-package-"));
@@ -41,6 +42,8 @@ test("packed executable works in an empty project without source files or state 
     );
     expect(executable).toStartWith("#!/usr/bin/env bun");
     expect(executable).not.toMatch(/\/Users\/|IdeaProjects|sourceMappingURL/);
+    if (process.platform === "darwin")
+      await legacyRegression(join(temporary, "node_modules/@bunny-holes/ha-switch/dist/has.js"));
     for (const args of [[], ["--help"], ["--version"]]) {
       const child = Bun.spawn(
         [

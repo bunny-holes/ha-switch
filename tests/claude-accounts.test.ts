@@ -437,3 +437,24 @@ describe("Claude macOS account swapping", () => {
     expect(restored.claudeAiOauth.expiresAt).toBe(5e12);
   });
 });
+
+test("shortcut Claude switching preserves the legacy target backup and restores each home", async () => {
+  const f = fixture();
+  f.setProfile(".claude", "synthetic-native", "native");
+  f.setProfile(".claude-pkls", "synthetic-legacy", "legacy");
+  f.setProfile(".claude-work", "synthetic-work", "work");
+  f.setProfile(".claude-personal", "synthetic-personal", "personal");
+  const legacy = { ...pool, home: ".claude-pkls" };
+  await useClaudeAccount(legacy, "work", f.deps);
+  const before = f.keys.get("ha-switch:claude-backup:team");
+  await useClaudeAccount(pool, "personal", { ...f.deps, nativeBackup: true });
+  expect(f.keys.get("ha-switch:claude-backup:team")).toBe(before);
+  await restoreClaudeBackup(legacy, f.deps);
+  expect(f.files.get(configPath(".claude-pkls", home))?.oauthAccount).toEqual(
+    snap("synthetic-legacy", "legacy").oauthAccount,
+  );
+  await restoreClaudeBackup(pool, { ...f.deps, nativeBackup: true });
+  expect(f.files.get(configPath(".claude", home))?.oauthAccount).toEqual(
+    snap("synthetic-native", "native").oauthAccount,
+  );
+});
