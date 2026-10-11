@@ -72,9 +72,11 @@ For Antigravity, save each login under a label after signing in with `agy`.
 in `~/.claude`, with `CLAUDE_CONFIG_DIR` unset. Each shortcut applies the selected
 account to that native home. One pool is chosen automatically; several require
 `--pool NAME`. Use `--account N` or `-s N` to select one account before launch.
-Without a number, the shortcut keeps the native home's selected account when it
-is in the pool, then falls back to the existing pool selection on first use.
-If neither login is in the pool, choose an account number explicitly.
+Without a number, Codex chooses account 2 or 3 with at least 10% of its 5-hour
+usage remaining, preferring the larger remainder. If neither qualifies, account 1
+needs more than 20% weekly remaining. Otherwise it exits without launching.
+Unknown required usage or a failed query cannot qualify. Claude keeps its current
+configured account. Explicit account numbers skip automatic usage selection.
 
 The shortcuts add these native flags, once each:
 
@@ -182,20 +184,46 @@ arguments after `--`. Existing `--yolo` counts as Codex's approval bypass flag;
 the shortcut adds the hook trust flag if it is missing. Options kept only in an
 old shell function are not imported. `has run` keeps its existing flag behavior.
 
-Existing `has run codex --pool pkls -- resume ID` and `has -h x --pool pkls -s N`
-still use the configured `.codex-pkls` home. Keep this path to resume sessions in
-that home. `has x` does not move or delete its settings, plugins, sessions, or login.
-The first shortcut switch preserves the native source account separately; compatible
-pool commands use that saved source afterward so account numbers keep their identities.
+The old `.codex-pkls` target is retired. Legacy execution, switching, sync, and
+restore paths targeting it fail with `pool_home_retired`; they never recreate it.
+Set the pool `home` to `.codex` and retain its account source list. The pool name
+`pkls` can remain as a configuration name; it no longer implies a separate home.
+Use `has switch codex N` and `has x --account N` for native-home selection.
 
-The single home uses `~/.codex/config.toml`; it does not copy the old pool's settings.
-A migration check found default reasoning effort `low` versus `medium` in `pkls`,
-different enabled `code-review`/`workbench` plugins, 126/128 trusted projects, and
-40/2 `hooks.state` entries. These are local differences, not HA Switch defaults.
-To use medium effort on shortcut launches, include `"-c", "model_reasoning_effort=medium"`
-in the pool's `args`, as shown below. Plugins, project trust, hooks, and old session
-records stay in their original homes. `has restore` restores the native Codex login;
-`has restore codex --pool pkls` restores the compatible pool login.
+Treat `~/.codex` as replaceable slot 0. Slots 1, 2, and 3 retain their own account
+sources. The original `.codex` source is archived separately before slot 0 is
+replaced. Before switching, updated login tokens are synchronized back to the
+matching source. `*` marks the account currently applied to the native home.
+
+Switch and launch one terminal at a time. Complete one before starting another;
+never run these operations concurrently or during an authentication refresh.
+Open sessions keep their loaded login. HA Switch rechecks changed state, rejects
+mixed account/token identities, and checks the selected account before launch.
+It cannot prevent a separate Codex process from writing the shared login file.
+
+The single home uses `~/.codex/config.toml`; settings are not copied from old homes.
+Use pool `args` for explicit overrides, such as `"-c", "model_reasoning_effort=medium"`.
+`has restore` restores the native Codex login.
+
+### Automatic Codex selection
+
+The same usage values and status rules drive `has -h x` and automatic selection.
+Among eligible priority accounts, higher 5-hour remaining usage wins, then weekly
+remaining usage, then configured order. Query failures and unknown required usage
+cannot qualify. Account 1 at 20% weekly remaining or below is not eligible.
+Failure prints `no_available_account` and “사용 가능한 계정 없음”, returns 1,
+and does not switch or launch.
+
+Configure each pool's optional `selection` object:
+
+```json
+{
+  "priority": [2, 3],
+  "minimumFiveHourRemaining": 10,
+  "fallback": 1,
+  "minimumFallbackWeeklyRemaining": 20
+}
+```
 
 ## 🎛️ Commands
 
@@ -214,7 +242,7 @@ records stay in their original homes. `has restore` restores the native Codex lo
 | Switch Antigravity to profile number 2 | `-h a -s 2` |
 | Synchronize saved login copies | `sync` |
 | Restore native Codex's account from before its first switch | `restore` |
-| Restore the compatible Codex pool target | `restore codex` |
+| Restore a configured non-retired Codex target | `restore codex --pool NAME` |
 | Restore Claude's previous account | `restore claude` |
 | Restore Antigravity's account from before its first switch | `restore agy` |
 | Save the current Antigravity login | `-c a <label>` |
@@ -351,3 +379,7 @@ It builds in temporary directories and refuses to replace existing release files
 
 `has restore c --pool NAME` restores the shortcut Claude home.
 `has restore claude --pool NAME` keeps restoring the configured pool home.
+
+A launch is ready when the new session has loaded its selected login. Then the
+next terminal may be started; existing sessions may stay open. Do not wait for
+them to exit, and do not overlap the switch or startup steps.

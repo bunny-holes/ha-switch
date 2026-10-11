@@ -72,9 +72,10 @@ Antigravity는 `agy`로 각 계정에 로그인한 뒤 이름을 정해 저장�
 `has c`는 `CLAUDE_CONFIG_DIR`을 비우고 기본 `~/.claude`에서 Claude를 연다.
 선택한 계정의 로그인을 그 기본 홈에 적용한다. 풀은 하나면 자동으로 고르고,
 여럿이면 `--pool NAME`으로 고른다. `--account N`이나 `-s N`으로 계정 하나를
-고른 뒤 실행할 수 있다. 번호를 생략하면 기본 홈의 현재 계정이 풀 안에 있을 때
-그 계정을 쓴다. 처음 쓸 때 찾지 못하면 기존 풀의 선택을 쓴다.
-둘 다 풀 안에 없으면 번호를 직접 지정한다.
+고른 뒤 실행할 수 있다. 번호가 없으면 Codex는 5시간 잔량이 10% 이상인
+2·3번 중 잔량이 큰 쪽을 고른다. 둘 다 부족하면 주간 잔량이 20%보다 큰
+1번을 쓴다. 없으면 실행하지 않는다. 필수 잔량이 없거나 조회가 실패해도
+고르지 않는다. Claude는 현재 계정을 쓴다. 번호를 지정하면 자동 선택을 생략한다.
 
 두 단축은 다음 앱 옵션을 하나씩 붙인다.
 
@@ -182,20 +183,42 @@ has switch 2
 훅 신뢰 생략 옵션만 없으면 더 붙인다. 옛 셸 함수에만 있던 옵션은 가져오지 않는다.
 기존 `has run`의 옵션 전달 방식은 유지한다.
 
-`has run codex --pool pkls -- resume ID`와 `has -h x --pool pkls -s N`은 계속
-설정된 `.codex-pkls` 홈을 쓴다. 그 홈의 대화를 이어 열 때는 이 경로를 쓴다.
-`has x`는 그 홈의 설정·플러그인·대화·로그인을 옮기거나 지우지 않는다.
-첫 단축 전환 뒤에는 기존 풀 명령도 따로 보관한 원본 계정을 쓴다.
-따라서 기본 홈의 계정을 갈아끼워도 각 번호가 가리키는 계정은 유지된다.
+옛 `.codex-pkls` 실행 홈은 폐기됐다. 그 홈을 대상으로 하는 기존 실행·전환·동기화·복원
+명령은 `pool_home_retired` 오류를 내며 홈을 다시 만들지 않는다. 풀의 `home`을
+`.codex`으로 바꾸고 계정 원본 목록은 유지한다. 풀 이름 `pkls`는 그대로 써도 된다.
+`has switch codex N`과 `has x --account N`은 기본 홈의 로그인을 바꾼다.
 
-단일 홈은 `~/.codex/config.toml`의 설정을 쓴다. 옛 풀 설정을 자동으로 복사하지 않는다.
-이행 확인 때 기본 홈의 추론 강도는 `low`, `pkls`는 `medium`이었다.
-켜진 `code-review`·`workbench` 플러그인도 달랐고, 신뢰 프로젝트는 126/128개,
-`hooks.state` 항목은 40/2개였다. 이는 확인한 로컬 설정의 차이이며 HA Switch의 기본값이 아니다.
-단축 실행에서 `medium`을 쓰려면 아래 예시처럼 풀의 `args`에
-`"-c", "model_reasoning_effort=medium"`을 둔다. 플러그인·프로젝트 신뢰·훅·옛 대화
-기록은 원래 홈에 남는다. `has restore`는 기본 Codex 로그인을 돌리고,
-`has restore codex --pool pkls`는 기존 풀의 로그인을 돌린다.
+`~/.codex`는 갈아끼우는 0번 자리다. 1·2·3번은 각 계정 원본이다.
+처음 전환할 때 원래 `.codex` 로그인은 따로 보관한다. 전환 전에 갱신된 토큰을
+같은 계정의 원본에 돌려쓴다. `*`는 기본 홈에 지금 적용된 계정을 가리킨다.
+
+전환과 실행은 한 번에 하나씩 끝낸다. 동시에 실행하거나 토큰 갱신 중 전환하지 않는다.
+열린 세션은 이미 읽은 로그인을 유지한다. HA Switch는 쓰기 전 변경 여부와
+토큰의 계정을 확인하고, 실행 직전 선택 계정을 다시 확인한다.
+별도 Codex 프로세스가 공유 로그인 파일에 쓰는 일까지 막지는 못한다.
+
+설정은 `~/.codex/config.toml`을 쓴다. 옛 홈의 설정을 자동 복사하지 않는다.
+추론 강도 등을 바꾸려면 풀의 `args`에 `"-c", "model_reasoning_effort=medium"`처럼 넣는다.
+`has restore`는 기본 Codex 로그인을 복원한다.
+
+### Codex 자동 선택
+
+`has -h x`와 같은 잔량·상태 기준을 쓴다. 2·3번 중 조건을 만족한 계정의
+5시간 잔량, 주간 잔량, 설정 순서로 고른다. 둘 다 부족하면 1번을 쓴다.
+1번 주간 잔량이 20% 이하이면 `no_available_account`와 “사용 가능한 계정 없음”을
+안내하고 종료 코드 1로 끝낸다. 계정을 바꾸거나 실행하지 않는다.
+필수 잔량을 모르거나 조회가 실패하면 선택 후보에서 뺀다.
+
+풀 설정의 `selection`으로 순서와 기준을 바꿀 수 있다.
+
+```json
+{
+  "priority": [2, 3],
+  "minimumFiveHourRemaining": 10,
+  "fallback": 1,
+  "minimumFallbackWeeklyRemaining": 20
+}
+```
 
 ## 🎛️ 명령
 
@@ -216,7 +239,7 @@ has switch 2
 | Antigravity를 2번 프로필로 바꾸기 | `-h a -s 2` |
 | 저장된 로그인 사본 맞추기 | `sync` |
 | 기본 홈의 Codex를 첫 전환 전 계정으로 돌리기 | `restore` |
-| 기존 Codex 풀의 계정 돌리기 | `restore codex` |
+| 폐기되지 않은 Codex 풀의 계정 돌리기 | `restore codex --pool NAME` |
 | Claude를 직전 계정으로 돌리기 | `restore claude` |
 | Antigravity를 첫 전환 전 계정으로 돌리기 | `restore agy` |
 | 현재 Antigravity 로그인 저장하기 | `-c a <label>` |
@@ -351,3 +374,6 @@ bun add --global --ignore-scripts /tmp/ha-switch-local.tgz
 
 `has restore c --pool NAME`은 기본 Claude 홈을 복원합니다.
 `has restore claude --pool NAME`은 기존 풀 홈을 복원합니다.
+
+새 세션이 선택한 로그인을 읽고 시작하면 다음 터미널을 열어도 된다.
+기존 세션을 닫을 필요는 없다. 전환·시작 단계만 겹치지 않게 한다.
