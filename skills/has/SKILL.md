@@ -123,18 +123,27 @@ A launch is ready when the new session has loaded its selected login. Then the
 next terminal may be started; existing sessions may stay open. Do not wait for
 them to exit, and do not overlap the switch or startup steps.
 
-## Remote macOS keychain access
+## macOS keychain access
 
-After reboot, SSH/mosh may not allow the login keychain to supply credentials.
-`keychain_interaction_not_allowed` means interaction is blocked; it does not prove
-that the login entry is missing. Run `security unlock-keychain ~/Library/Keychains/login.keychain-db`
-on the Mac and enter the password at its prompt. If access still fails, allow it
-in Keychain Access from a normal macOS desktop session. Keep existing access controls.
-Do not put the password in a command argument, environment variable, log, or file.
+Keychain lock and process security-session access are separate conditions.
+`keychain_locked` reports a confirmed locked keychain. Run
+`security unlock-keychain ~/Library/Keychains/login.keychain-db` and enter the
+password only at its prompt.
+
+`keychain_no_gui_session` reports that the calling macOS security session cannot
+show an approval window. Use a normal Mac Terminal. A Herdr server started in a
+remote session keeps that session even after a local client attaches; new panes
+inherit it. Reloading shell settings with `source` or clearing SSH environment
+variables does not change the macOS security session. Do not stop an existing
+Herdr server or its agents without the user's explicit instruction.
+
+If native status cannot identify the condition, report
+`keychain_interaction_not_allowed` without claiming that the keychain is locked.
+Denied access and missing items have separate guidance. Keep existing access
+controls; do not grant unrestricted access or export credentials.
 
 `has -h c` keeps configured account labels visible when keychain access fails,
 shows usage and current selection as unknown, and prints one recovery message.
-Previous usage is not cached by this version, so it cannot show a last confirmed
-balance while the keychain is blocked. Missing entries are shown as signed out
-with sign-in guidance; denied access is shown as unavailable. Switching still
-fails without changing native credentials. Never treat unknown usage as zero.
+Previous usage is not cached, so no last confirmed balance is available while
+credential access is blocked. Missing entries show signed-out state. Switching
+still fails before credential writes when preflight reads are blocked.
