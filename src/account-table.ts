@@ -10,6 +10,7 @@ export function accountAt(pool: Pool, text: string): string {
 }
 
 function usageCells(row: AccountRow, now: number): string[] {
+  if (row.credentialError) return ["확인 불가", "-", "-", "-", "-"];
   if (row.resetError) return ["query failed", "-", "-", "-", "-"];
   const windows = usageWindows(row.rateLimits);
   const windowFor = (minutes: number) => usageWindow(row.rateLimits, minutes);
@@ -95,7 +96,11 @@ export function accountTable(
     "",
     ...table,
     "",
-    listing.current ? "* current profile" : "Current profile is outside this list.",
+    listing.accounts.some((row) => row.credentialError)
+      ? "Current profile cannot be checked. Previous usage was not saved; remaining usage is unknown."
+      : listing.current
+        ? "* current profile"
+        : "Current profile is outside this list.",
     `Switch: ${options.command ?? "has -h <HARNESS> -s"} <NUMBER>`,
   ].join("\n");
 }

@@ -26,6 +26,7 @@ import {
   validateHostPools,
 } from "./config.ts";
 import { errorCode, PoolError } from "./errors.ts";
+import { keychainErrorMessage } from "./keychain.ts";
 import { launch, shortcutArguments } from "./launch.ts";
 import {
   codexPoolSources,
@@ -505,6 +506,8 @@ export async function main(
                 ? await deps.listClaude(pool, { home: deps.home, local })
                 : await deps.listAgy(pool);
           if (host === "codex" && !local) await addUsage(pool, listing, deps);
+          for (const code of new Set(listing.warnings ?? []))
+            report(`has: ${code} — ${keychainErrorMessage(code)}`);
           const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
           const poolFlag = ` --pool ${quote(pool.name)}`;
           const configFlag = options.has("--config-dir") ? ` --config-dir ${quote(directory)}` : "";
@@ -551,7 +554,7 @@ export async function main(
     report(
       errorCode(error) === "no_available_account"
         ? "has: no_available_account — 사용 가능한 계정 없음. Wait for usage to reset or select an account explicitly."
-        : `has: ${errorCode(error)}`,
+        : `has: ${errorCode(error)}${errorCode(error).startsWith("keychain_") ? ` — ${keychainErrorMessage(errorCode(error))}` : ""}`,
     );
     return 1;
   }

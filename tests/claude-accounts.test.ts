@@ -15,6 +15,7 @@ import {
   useClaudeAccount,
   validateClaudePools,
 } from "../src/claude-accounts.ts";
+import { PoolError } from "../src/errors.ts";
 import type { Pool } from "../src/types.ts";
 
 const home = "/tmp/ha-switch-fixture";
@@ -457,4 +458,43 @@ test("shortcut Claude switching preserves the legacy target backup and restores 
   expect(f.files.get(configPath(".claude", home))?.oauthAccount).toEqual(
     snap("synthetic-native", "native").oauthAccount,
   );
+});
+
+test("blocked keychain listing keeps configured labels unknown and stops duplicate reads", async () => {
+  for (const code of [
+    "keychain_interaction_not_allowed",
+    "keychain_access_denied",
+    "keychain_unavailable",
+    "keychain_read_failed",
+  ]) {
+    const f = fixture();
+    let reads = 0;
+    f.deps.keychain.read = async () => {
+      reads++;
+      throw new PoolError(code);
+    };
+    const listing = await listClaudeAccounts(pool, f.deps);
+    expect(listing.accounts.map((row) => row.account)).toEqual(pool.accounts);
+    expect(
+      listing.accounts.every(
+        (row) =>
+          row.authenticated === undefined && row.rateLimits === null && row.resetCredits === null,
+      ),
+    ).toBe(true);
+    expect(listing.warnings).toEqual([code]);
+    expect(listing.current).toBeUndefined();
+    expect(reads).toBe(1);
+    expect(f.writes).toEqual([]);
+    await expect(useClaudeAccount(pool, "work", f.deps)).rejects.toThrow(code);
+    expect(f.writes).toEqual([]);
+  }
+});
+
+test("missing login differs from an inaccessible keychain and malformed credentials still fail", async () => {
+  const f = fixture();
+  const listing = await listClaudeAccounts(pool, f.deps);
+  expect(listing.warnings).toEqual(["keychain_item_missing"]);
+  expect(listing.accounts.every((row) => row.authenticated === false)).toBe(true);
+  f.keys.set(credentialService(".claude", home), "invalid");
+  await expect(listClaudeAccounts(pool, f.deps)).rejects.toThrow("claude_credential_invalid");
 });

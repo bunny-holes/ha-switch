@@ -38,10 +38,12 @@ export interface AccountRow {
   plan?: string | null;
   resetCredits?: number | null;
   resetError?: string;
+  credentialError?: string;
   rateLimits?: RateLimits | null;
 }
 
 export interface AccountListing {
   current?: string;
   accounts: AccountRow[];
+  warnings?: string[];
 }

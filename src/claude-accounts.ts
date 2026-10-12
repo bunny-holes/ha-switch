@@ -3,6 +3,7 @@ import { chmod, mkdir, rename, stat, unlink } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { errorCode, PoolError } from "./errors.ts";
+import { isKeychainFailure, keychainFailure } from "./keychain.ts";
 import { logger } from "./log.ts";
 import { localProfiles } from "./profiles.ts";
 import type { AccountListing, AccountRow, Pool, Pools, RateLimits, RateWindow } from "./types.ts";
@@ -113,9 +114,11 @@ export const macKeychain: ClaudeDependencies["keychain"] = {
       const value = await Bun.secrets.get({ service, name: keychainAccount() });
       log("keychain_read_success");
       return value ?? undefined;
-    } catch {
-      log("keychain_read_failure", {}, "error");
-      throw new PoolError("keychain_read_failed");
+    } catch (error) {
+      const failure = keychainFailure(error);
+      if (failure.code === "keychain_item_missing") return undefined;
+      log("keychain_read_failure", { code: failure.code }, "error");
+      throw failure;
     }
   },
   async write(service, value) {
@@ -124,9 +127,10 @@ export const macKeychain: ClaudeDependencies["keychain"] = {
     try {
       await Bun.secrets.set({ service, name: keychainAccount(), value });
       log("keychain_write_success");
-    } catch {
-      log("keychain_write_failure", {}, "error");
-      throw new PoolError("keychain_write_failed");
+    } catch (error) {
+      const failure = keychainFailure(error, "write");
+      log("keychain_write_failure", { code: failure.code }, "error");
+      throw failure;
     }
   },
 };
@@ -256,8 +260,12 @@ async function copies(pool: Pool, deps: ClaudeDependencies) {
       ...Object.values(pool.from ?? {}),
     ]),
   ];
-  const native = await Promise.all(directories.map((d) => profile(d, deps)));
-  const stored = await Promise.all(pool.accounts.map((a) => read(STORE + a, deps)));
+  // Fail at the first unavailable keychain boundary instead of logging the same
+  // global access failure for every profile in parallel.
+  const native: Snapshot[] = [];
+  for (const directory of directories) native.push(await profile(directory, deps));
+  const stored: Snapshot[] = [];
+  for (const label of pool.accounts) stored.push(await read(STORE + label, deps));
   return { native, stored };
 }
 export async function captureClaudeAccount(
@@ -497,7 +505,21 @@ export async function listClaudeAccounts(
   overrides: Partial<ClaudeDependencies> = {},
 ): Promise<AccountListing> {
   const deps = { ...defaults(), ...overrides };
-  const state = await copies(pool, deps);
+  let state: Awaited<ReturnType<typeof copies>>;
+  try {
+    state = await copies(pool, deps);
+  } catch (error) {
+    if (!isKeychainFailure(error) || error.code === "keychain_item_missing") throw error;
+    return {
+      accounts: pool.accounts.map((account) => ({
+        account,
+        credentialError: error.code,
+        resetCredits: null,
+        rateLimits: null,
+      })),
+      warnings: [error.code],
+    };
+  }
   const native = state.native.find((s) => s.service === credentialService(pool.home, deps.home));
   const nativeLogin = native && login(native.item.claudeAiOauth);
   const accounts: AccountRow[] = [];
@@ -551,5 +573,11 @@ export async function listClaudeAccounts(
     }
     accounts.push(row);
   }
-  return { current, accounts };
+  return {
+    current,
+    accounts,
+    ...(accounts.length && accounts.every((row) => row.authenticated === false)
+      ? { warnings: ["keychain_item_missing"] }
+      : {}),
+  };
 }

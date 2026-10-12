@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { version } from "../package.json";
+import { listClaudeAccounts } from "../src/claude-accounts.ts";
 import { type CliDependencies, main } from "../src/cli.ts";
+import { PoolError } from "../src/errors.ts";
 import { nativeCodexPool } from "../src/pool.ts";
 import type { Pool, Pools } from "../src/types.ts";
 
@@ -810,4 +812,39 @@ test("Claude shortcut backup and restore stay separate from the configured pool"
   expect(await main(["c", "-s", "2"], f.deps)).toBe(7);
   expect(await main(["restore", "c"], f.deps)).toBe(0);
   expect(await main(["restore", "claude"], f.deps)).toBe(0);
+});
+
+test("Claude inaccessible keychain shows a table and one human recovery line", async () => {
+  const f = fixture();
+  f.deps.listClaude = async (pool) =>
+    listClaudeAccounts(pool, {
+      home: "/synthetic-keychain-home",
+      keychain: {
+        read: async () => {
+          throw new PoolError("keychain_interaction_not_allowed");
+        },
+        write: async () => {
+          throw new Error("unexpected write");
+        },
+      },
+    });
+  expect(await main(["-h", "c"], f.deps)).toBe(0);
+  expect(f.output[0]).toContain("account-a");
+  expect(f.output[0]).toContain("account-b");
+  expect(f.output[0]).toContain("확인 불가");
+  expect(f.output[0]).not.toContain("signed-out");
+  expect(f.errors).toHaveLength(1);
+  expect(f.errors[0]).toContain("security unlock-keychain ~/Library/Keychains/login.keychain-db");
+  expect(f.events).toEqual([]);
+});
+
+test("Claude switching still fails with a human keychain recovery message", async () => {
+  const f = fixture();
+  f.deps.useClaude = async () => {
+    throw new PoolError("keychain_access_denied");
+  };
+  expect(await main(["-h", "c", "-s", "2"], f.deps)).toBe(1);
+  expect(f.errors).toHaveLength(1);
+  expect(f.errors[0]).toContain("접근이 거부");
+  expect(f.events).toEqual([]);
 });
