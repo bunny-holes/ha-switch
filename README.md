@@ -383,3 +383,19 @@ It builds in temporary directories and refuses to replace existing release files
 A launch is ready when the new session has loaded its selected login. Then the
 next terminal may be started; existing sessions may stay open. Do not wait for
 them to exit, and do not overlap the switch or startup steps.
+
+## Remote macOS keychain access
+
+After reboot, SSH/mosh may not allow the login keychain to supply credentials.
+`keychain_interaction_not_allowed` means interaction is blocked; it does not prove
+that the login entry is missing. Run `security unlock-keychain ~/Library/Keychains/login.keychain-db`
+on the Mac and enter the password at its prompt. If access still fails, allow it
+in Keychain Access from a normal macOS desktop session. Keep existing access controls.
+Do not put the password in a command argument, environment variable, log, or file.
+
+`has -h c` keeps configured account labels visible when keychain access fails,
+shows usage and current selection as unknown, and prints one recovery message.
+Previous usage is not cached by this version, so it cannot show a last confirmed
+balance while the keychain is blocked. Missing entries are shown as signed out
+with sign-in guidance; denied access is shown as unavailable. Switching still
+fails without changing native credentials. Never treat unknown usage as zero.
