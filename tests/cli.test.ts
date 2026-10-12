@@ -10,7 +10,11 @@ function fixture() {
   const output: string[] = [];
   const errors: string[] = [];
   const events: string[] = [];
-  const pool = { home: ".codex", accounts: ["account-a", "account-b"] };
+  const pool = {
+    home: ".codex",
+    accounts: ["account-a", "account-b"],
+    from: { "account-a": ".claude-a", "account-b": ".claude-b" },
+  };
   const deps: Partial<CliDependencies> = {
     platform: "darwin",
     home: "/unused-test-home",
@@ -115,7 +119,7 @@ test("explicit config directory overrides environment", async () => {
 });
 test("--list shows configured harnesses, profiles, current selection and live usage", async () => {
   const f = fixture();
-  expect(await main(["--list"], f.deps)).toBe(0);
+  expect(await main(["--list", "--usage"], f.deps)).toBe(0);
   expect(f.output.join("\n")).toContain("Codex / default");
   expect(f.output.join("\n")).toContain("Claude / default");
   expect(f.output[0]).toContain("profile");
@@ -232,7 +236,7 @@ test("switch flags reject invalid profile numbers without changing accounts", as
 test("local lists skip all writes and usage queries", async () => {
   const f = fixture();
   expect(await main(["list", "--local"], f.deps)).toBe(0);
-  expect(f.events).toEqual(["claude-list:true"]);
+  expect(f.events).toEqual([]);
 });
 test("switch uses shown number and refuses ambiguous pools before writes", async () => {
   const f = fixture();
@@ -252,7 +256,7 @@ test("run preserves forwarded arguments and child exit code", async () => {
   const f = fixture();
   expect(await main(["run", "codex", "--account", "1", "--", "--help", "resume"], f.deps)).toBe(7);
   expect(f.events).toContain("run:--help,resume");
-  expect(f.events).toContain("codex-switch:account-a");
+  expect(f.events).not.toContain("codex-switch:account-a");
 });
 test("invalid run account refuses sync and launch", async () => {
   const f = fixture();
@@ -262,13 +266,13 @@ test("invalid run account refuses sync and launch", async () => {
 test("failed usage remains a visible row alongside usable accounts", async () => {
   const f = fixture();
   f.deps.readUsage = async (account) => {
-    if (account === "account-a") throw new Error("private response");
+    if (account === ".claude-a") throw new Error("private response");
     return {
       resetCredits: 0,
       rateLimits: { primary: { windowDurationMins: 300, usedPercent: 0 } },
     };
   };
-  expect(await main(["list", "codex"], f.deps)).toBe(0);
+  expect(await main(["list", "codex", "--usage"], f.deps)).toBe(0);
   expect(f.output[0]).toContain("account-a");
   expect(f.output[0]).toContain("query failed");
   expect(f.output[0]).toContain("account-b");
@@ -318,7 +322,7 @@ test("normal Claude list calls only its read-only listing adapter and keeps usag
   f.deps.useClaude = async () => {
     throw new Error("unexpected switch");
   };
-  expect(await main(["list", "claude"], f.deps)).toBe(0);
+  expect(await main(["list", "claude", "--usage"], f.deps)).toBe(0);
   expect(f.events).toEqual(["claude-list"]);
   for (const field of [
     "plan",
@@ -343,12 +347,13 @@ test("Claude switch and selected run avoid redundant synchronization", async () 
   expect(f.events).toEqual(["claude-switch:account-b"]);
   f.events.length = 0;
   expect(await main(["run", "claude", "--account", "1"], f.deps)).toBe(7);
-  expect(f.events).toEqual(["claude-switch:account-a", "run:"]);
+  expect(f.events).toEqual(["run:"]);
 });
-test("Claude run without account synchronizes once before launch", async () => {
+test("Claude run without account requires explicit selection without reading credentials", async () => {
   const f = fixture();
-  expect(await main(["run", "claude"], f.deps)).toBe(7);
-  expect(f.events).toEqual(["claude-sync", "run:"]);
+  expect(await main(["run", "claude"], f.deps)).toBe(1);
+  expect(f.events).toEqual([]);
+  expect(f.errors).toEqual(["has: account_selection_required"]);
 });
 test("unknown exceptions do not reveal messages", async () => {
   const f = fixture();
@@ -505,8 +510,14 @@ test("Antigravity labels are validated before snapshot or config writes", async 
 });
 test("Antigravity list, switch, sync and restore use native adapter", async () => {
   const f = fixture();
-  f.deps.readPools = async (): Promise<Pools> => ({
-    default: { home: ".gemini", accounts: ["account-a", "account-b"] },
+  f.deps.readPools = async (path): Promise<Pools> => ({
+    default: {
+      home: ".gemini",
+      accounts: ["account-a", "account-b"],
+      ...(path?.endsWith("claude-pools.json")
+        ? { from: { "account-a": ".claude-a", "account-b": ".claude-b" } }
+        : {}),
+    },
   });
   f.deps.listAgy = async () => {
     f.events.push("agy-list");
@@ -521,7 +532,7 @@ test("Antigravity list, switch, sync and restore use native adapter", async () =
   f.deps.restoreAgy = async () => {
     f.events.push("agy-restore");
   };
-  expect(await main(["list", "agy", "--local"], f.deps)).toBe(0);
+  expect(await main(["list", "agy", "--usage"], f.deps)).toBe(0);
   expect(await main(["switch", "agy", "2"], f.deps)).toBe(0);
   expect(await main(["sync", "agy"], f.deps)).toBe(0);
   expect(await main(["restore", "agy"], f.deps)).toBe(0);
@@ -552,8 +563,14 @@ test("mutation is macOS only while help and local list remain available", async 
 });
 test("run supports Claude and Antigravity account selection with forwarded args", async () => {
   const f = fixture();
-  f.deps.readPools = async (): Promise<Pools> => ({
-    default: { home: ".gemini", accounts: ["account-a", "account-b"] },
+  f.deps.readPools = async (path): Promise<Pools> => ({
+    default: {
+      home: ".gemini",
+      accounts: ["account-a", "account-b"],
+      ...(path?.endsWith("claude-pools.json")
+        ? { from: { "account-a": ".claude-a", "account-b": ".claude-b" } }
+        : {}),
+    },
   });
   f.deps.useAgy = async (_pool, account) => {
     f.events.push(`agy-switch:${account}`);
@@ -564,12 +581,7 @@ test("run supports Claude and Antigravity account selection with forwarded args"
   };
   expect(await main(["run", "claude", "--account", "2", "--", "--resume"], f.deps)).toBe(0);
   expect(await main(["run", "agy", "--account", "1", "--", "--help"], f.deps)).toBe(0);
-  expect(f.events).toEqual([
-    "claude-switch:account-b",
-    "launch:claude:--resume",
-    "agy-switch:account-a",
-    "launch:agy:--help",
-  ]);
+  expect(f.events).toEqual(["launch:claude:--resume", "agy-switch:account-a", "launch:agy:--help"]);
 });
 test("Codex restore has a named missing-backup error", async () => {
   const f = fixture();
@@ -728,13 +740,13 @@ test("bare switch and restore manage the native Codex home while harness flags r
   expect(await main(["restore"], f.deps)).toBe(0);
   expect(await main(["-h", "x", "--pool", "team", "-s", "1"], f.deps)).toBe(0);
   expect(f.events).toEqual([".codex:account-b:true", ".codex-team:account-a:false"]);
-  expect(await main(["switch", "--local", "--config-dir", "/test-config"], f.deps)).toBe(0);
+  expect(await main(["switch", "--usage", "--config-dir", "/test-config"], f.deps)).toBe(0);
   expect(f.output.at(-1)).toContain(
     "has --pool 'team' --config-dir '/test-config' switch <NUMBER>",
   );
 });
 
-test("legacy Codex run keeps its pool home and does not inject shortcut flags", async () => {
+test("selected Codex run uses its source and does not inject shortcut flags", async () => {
   const f = fixture();
   f.deps.readPools = async () => ({
     team: {
@@ -744,15 +756,18 @@ test("legacy Codex run keeps its pool home and does not inject shortcut flags", 
     },
   });
   f.deps.launch = async (_host, pool, args) => {
-    expect(pool.home).toBe(".codex-team");
+    expect(pool.home).toBe("/unused-test-home/account-a");
     expect(pool.args).toEqual(["--yolo", "-c", "web_search=live"]);
     expect(args).toEqual(["resume", "synthetic-session"]);
     return 0;
   };
   expect(
-    await main(["run", "codex", "--pool", "team", "--", "resume", "synthetic-session"], f.deps),
+    await main(
+      ["run", "codex", "account-a", "--pool", "team", "--", "resume", "synthetic-session"],
+      f.deps,
+    ),
   ).toBe(0);
-  expect(f.events).toEqual(["codex-sync"]);
+  expect(f.events).toEqual([]);
 });
 
 test("shortcut-only options fail on legacy commands before local state access", async () => {
@@ -828,7 +843,7 @@ test("Claude inaccessible keychain shows a table and one human recovery line", a
         },
       },
     });
-  expect(await main(["-h", "c"], f.deps)).toBe(0);
+  expect(await main(["-h", "c", "--usage"], f.deps)).toBe(0);
   expect(f.output[0]).toContain("account-a");
   expect(f.output[0]).toContain("account-b");
   expect(f.output[0]).toContain("확인 불가");

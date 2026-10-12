@@ -91,6 +91,40 @@ arguments without reading or writing credentials or starting the native CLI.
 Arguments after `--` go to the native CLI. For example, `has c -s 2 -- --resume`
 opens Claude's resume picker after selecting account 2.
 
+## Direct profile launch (unreleased)
+
+```bash
+has run claude work -- --version
+has run codex 2 -- resume
+has list
+has list claude --usage
+```
+
+`run codex/claude <LABEL|NUMBER>` now starts the configured source profile using
+`CODEX_HOME` or `CLAUDE_CONFIG_DIR`. It does not read credentials or usage, synchronize
+logins, or replace the global login. The native app handles its own authentication.
+A source that is the native default home clears the inherited profile override.
+Labels match exactly; numbers start at 1. Use `--pool NAME` when needed.
+Pool `args` and arguments after `--` are preserved; no shortcut flags are added.
+
+**Changed behavior:** `run` previously launched the shared pool target and could
+synchronize or switch its login. Codex and Claude now require a source selection;
+`--account NUMBER` also selects a source, without switching. A missing selection
+returns `account_selection_required`. Claude snapshots without a source directory
+return `account_source_missing`; set `from` to an existing native profile.
+Paths come from `from`, or the Codex account path / Claude `.claude*` account path.
+These are the configured profiles, not a copy of the shared home's settings or history.
+If a configured source is the shared native home, it uses that home's current login;
+use a dedicated source profile for independent accounts.
+`run agy`, `x/c`, `-h`, `-s`, and explicit switching keep their existing behavior.
+
+Default lists (`list`, `--list`, `-h`, and `switch` without a number) now show only
+configured names and source paths. They do not read credentials or identify the
+current login. `--usage` enables the previous credential and usage queries.
+`--local` is a configuration-only alias and cannot be combined with `--usage`.
+Keychain-only accounts show `(no source profile)`. A failed current-login read
+keeps its read-error name instead of becoming `account_current_not_in_pool`.
+
 ## 🧩 Install the agent skill
 
 The optional `has` skill uses the installed CLI. It needs no marketplace or MCP server.
@@ -123,7 +157,7 @@ preserved under `~/.config/ha-switch/codex-accounts/native/auth.json`.
 The native home's login backup remains `~/.codex/auth.json.ha-switch-backup`.
 Other source profiles stay separate from the target. Claude keeps saved accounts
 in the macOS keychain and replaces only login and account metadata in the native home.
-`init` retains a `.codex-ha-switch` target for the compatible `has run codex` path.
+`init` retains a `.codex-ha-switch` target for explicit pool switching; direct `run` ignores that target.
 If you already have pool configuration from toolbox, import that directory:
 
 ```bash
@@ -184,7 +218,7 @@ arguments after `--`. Existing `--yolo` counts as Codex's approval bypass flag;
 the shortcut adds the hook trust flag if it is missing. Options kept only in an
 old shell function are not imported. `has run` keeps its existing flag behavior.
 
-The old `.codex-pkls` target is retired. Legacy execution, switching, sync, and
+The old `.codex-pkls` target is retired. Legacy target switching, sync, and
 restore paths targeting it fail with `pool_home_retired`; they never recreate it.
 Set the pool `home` to `.codex` and retain its account source list. The pool name
 `pkls` can remain as a configuration name; it no longer implies a separate home.
@@ -195,7 +229,7 @@ sources. The original `.codex` source is archived separately before slot 0 is
 replaced. Before switching, updated login tokens are synchronized back to the
 matching source. `*` marks the account currently applied to the native home.
 
-Switch and launch one terminal at a time. Complete one before starting another;
+For shared-home switching and `x/c`, switch and launch one terminal at a time. Complete one before starting another;
 never run these operations concurrently or during an authentication refresh.
 Open sessions keep their loaded login. HA Switch rechecks changed state, rejects
 mixed account/token identities, and checks the selected account before launch.
@@ -207,7 +241,7 @@ Use pool `args` for explicit overrides, such as `"-c", "model_reasoning_effort=m
 
 ### Automatic Codex selection
 
-The same usage values and status rules drive `has -h x` and automatic selection.
+The same usage values and status rules drive `has -h x --usage` and automatic selection.
 Among eligible priority accounts, higher 5-hour remaining usage wins, then weekly
 remaining usage, then configured order. Query failures and unknown required usage
 cannot qualify. Account 1 at 20% weekly remaining or below is not eligible.
@@ -230,10 +264,11 @@ Configure each pool's optional `selection` object:
 | Result | Command after `has` |
 | --- | --- |
 | Show help | `--help` |
-| Show all configured harnesses, profiles, current selections and usage | `--list` |
-| Show Codex profiles and usage | `-h x` |
-| Show native Codex profiles and usage | `switch` |
-| Show Claude profiles and usage | `-h c` |
+| Show configured profile names and source paths | `--list` |
+| Query current selections and usage | `--list --usage` |
+| Show Codex profiles and usage | `-h x --usage` |
+| Show native Codex profiles and usage | `switch --usage` |
+| Show Claude profiles and usage | `-h c --usage` |
 | Show saved Antigravity profiles | `-h a` |
 | Read local profile labels without usage requests or writes | `--list --local` |
 | Switch native Codex to profile number 2 | `switch 2` |
@@ -252,7 +287,7 @@ Configure each pool's optional `selection` object:
 | Select an account and resume Claude | `c -s 2 -- --resume` |
 | Start a shortcut without bypass flags | `x --safe` or `c --safe` |
 | Inspect shortcut arguments without touching logins | `x --dry-run` or `c --dry-run` |
-| Start the compatible pool target | `run codex -- resume` or `run claude` |
+| Start a source profile without switching | `run codex 2 -- resume` or `run claude work` |
 | Start Antigravity with its current login | `run agy` |
 | Create local configuration from existing profiles | `init` |
 | Import existing pool configuration and Claude snapshots | `import --from <directory>` |
@@ -273,7 +308,7 @@ Use `--pool <name>` when you have several pools for the same tool.
 Use `--config-dir <directory>` to select another configuration directory.
 `--version` prints the installed package version.
 
-The table shows the current account, plan, status, five-hour remainder and reset time,
+With `--usage`, the table shows the current account, plan, status, five-hour remainder and reset time,
 weekly remainder and reset time, and available reset credits. Missing values stay unknown.
 A query failure stays visible in its account row. Reset credits are never consumed.
 
@@ -311,7 +346,8 @@ Profile numbers follow account order within each pool's configuration.
 
 Paths are resolved from your home directory. Absolute paths also work.
 Pool configuration stores paths and labels, never login tokens.
-`home` remains the target for compatible `run`, `-h`, and explicit host commands.
+`home` remains the target for explicit pool switching and `run agy`. Codex/Claude
+`run` uses the selected source path instead.
 `x` and `c` use the native home while keeping account order, source paths, and `args`.
 
 `agy-pools.json` is created by `has -c a <label>`. Its `accounts` list contains the saved labels.
@@ -320,12 +356,13 @@ Pool configuration stores paths and labels, never login tokens.
 
 ## ✅ Check the result
 
-Run `has switch --local` after a native Codex switch. For configured pool targets,
-use `has -h x`, `has -h c`, or `has -h a`. `*` marks the current profile.
-`has --list --local` skips network requests and login synchronization.
-Normal Codex listing can refresh expired logins and synchronize their saved copies.
-Claude listing reads logins without changing them. Use `sync claude` to synchronize saved copies,
-and Claude itself to refresh an expired login.
+Run `has switch --usage` to query the native Codex selection and usage. For configured
+pool targets, use `has -h x --usage`, `has -h c --usage`, or `has -h a --usage`.
+`*` marks the current profile only when that credential read succeeds.
+`has list` and `has --list --local` read configuration only.
+Codex `--usage` can refresh expired logins and synchronize saved copies.
+Claude `--usage` reads logins without changing them. Use `sync claude` to synchronize
+saved copies, and Claude itself to refresh an expired login.
 
 ## 🔐 Data and limits
 
@@ -403,7 +440,7 @@ If native status cannot identify the condition, report
 Denied access and missing items have separate guidance. Keep existing access
 controls; do not grant unrestricted access or export credentials.
 
-`has -h c` keeps configured account labels visible when keychain access fails,
+`has -h c --usage` keeps configured account labels visible when keychain access fails,
 shows usage and current selection as unknown, and prints one recovery message.
 Previous usage is not cached, so no last confirmed balance is available while
 credential access is blocked. Missing entries show signed-out state. Switching

@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- Change `run codex/claude <LABEL|NUMBER>` to launch the configured source profile directly, without credential reads, usage queries, synchronization, or global login replacement. `--account NUMBER` selects the source too; omitting a selection now reports `account_selection_required` instead of launching the shared pool target. Pool and forwarded arguments are preserved. `run agy` and `x/c` keep their existing behavior.
+- Make default lists configuration-only (names and source paths). Add `--usage` for credential/current-account and usage queries. `--local` remains a configuration-only alias and conflicts with `--usage`.
+- Preserve Claude current-login read errors instead of reporting `account_current_not_in_pool` when keychain access fails.
+
 ## 0.1.0
 
 - Install the standalone `has` command from a GitHub Release with Bun.

@@ -41,6 +41,7 @@ import {
   useAccount,
   verifySelectedCodexAccount,
 } from "./pool.ts";
+import { configuredProfile, profileList } from "./profile-launch.ts";
 import { selectCodexAccount } from "./selection.ts";
 import type { AccountListing, Pool, Pools } from "./types.ts";
 import { codexAccountUsage } from "./usage.ts";
@@ -50,7 +51,7 @@ Usage: has [OPTIONS]
        has <COMMAND> [ARGS...]
 
 has                          Show help
-has --list                   List managed harnesses, profiles, and current selections
+has --list                   List managed harnesses, profile names and source paths
 has x                        Start Codex in ~/.codex with bypass flags
 has c                        Start Claude in ~/.claude with bypass flags
 has c -s 2                   Select Claude profile 2 and start it in ~/.claude
@@ -71,12 +72,13 @@ has -c a personal            Save the current Antigravity login as personal
 
 Commands:
 
-list [codex|claude|agy] [--pool NAME] [--local]
+list [codex|claude|agy] [--pool NAME] [--usage|--local]
 switch <codex|claude|agy> [NUMBER] [--pool NAME]
 sync [codex|claude|agy] [--pool NAME]
 restore <codex|claude|agy> [--pool NAME]
 save agy <LABEL> [--pool NAME]
-run <codex|claude|agy> [--pool NAME] [--account NUMBER] [-- ARGS...]
+run <codex|claude> <LABEL|NUMBER> [--pool NAME] [-- ARGS...]
+run agy [--pool NAME] [--account NUMBER] [-- ARGS...]
 x|c [--pool NAME] [--account NUMBER|-s NUMBER] [--safe] [--dry-run] [-- ARGS...]
 switch [NUMBER] [--pool NAME] [--local]
 restore [--pool NAME]
@@ -86,7 +88,9 @@ import --from DIRECTORY
 
 Default: show help. Selecting only a harness lists its profiles.
 Create supports Antigravity only. Sign in with agy first.
---local reads saved data without updates or queries.
+Default lists read configuration only. --usage reads credentials and queries usage.
+--local is an alias for configuration-only listing; it cannot be combined with --usage.
+run codex/claude requires a source profile; --account NUMBER is also accepted.
 Common: --config-dir DIRECTORY
 One pool is selected automatically. Use --pool when switching among several.`;
 
@@ -223,7 +227,8 @@ export async function main(
   try {
     const positions: string[] = [];
     const options = new Map<string, string>();
-    let local = false;
+    let localOption = false;
+    let usage = false;
     let list = false;
     let safe = false;
     let dryRun = false;
@@ -237,8 +242,11 @@ export async function main(
         if (dryRun) throw new PoolError("duplicate_option");
         dryRun = true;
       } else if (word === "--local") {
-        if (local) throw new PoolError("duplicate_option");
-        local = true;
+        if (localOption) throw new PoolError("duplicate_option");
+        localOption = true;
+      } else if (word === "--usage") {
+        if (usage) throw new PoolError("duplicate_option");
+        usage = true;
       } else if (word === "--list") {
         if (list) throw new PoolError("duplicate_option");
         list = true;
@@ -260,6 +268,8 @@ export async function main(
       } else if (word.startsWith("-")) throw new PoolError("unknown_option");
       else positions.push(word);
     }
+    const local = !usage;
+    if (usage && localOption) throw new PoolError("option_not_applicable");
     let command = positions[0] ?? "list";
     let hostText: string | undefined = positions[1];
     let number: string | undefined = positions[2];
@@ -308,7 +318,7 @@ export async function main(
       throw new PoolError("unknown_command");
     if (command === "switch" && number === undefined && hostText) command = "list";
     if (
-      (local && command !== "list") ||
+      ((localOption || usage) && command !== "list") ||
       (options.has("--account") && command !== "run") ||
       (options.has("--from") && command !== "import") ||
       ((safe || dryRun) && !shortcut) ||
@@ -358,7 +368,7 @@ export async function main(
       );
       return 0;
     }
-    if (command === "switch" ? !number : number !== undefined)
+    if (command === "switch" ? !number : command !== "run" && number !== undefined)
       throw new PoolError(command === "switch" ? "account_number_required" : "unknown_argument");
     const hosts: Host[] = selectedHost ? [selectedHost] : ["codex", "claude", "agy"];
     const loaded = await Promise.all(
@@ -381,9 +391,23 @@ export async function main(
         options.get("--pool"),
         nativeTarget || ["switch", "restore", "run"].includes(command),
       );
+      found = true;
+      if (command === "list" && !usage) {
+        for (const pool of selected) print(profileList(host, pool, deps.home));
+        continue;
+      }
+      if (command === "run" && !shortcut && host !== "agy") {
+        if (number !== undefined && options.has("--account"))
+          throw new PoolError("duplicate_option");
+        const selector = number ?? options.get("--account");
+        if (!selector) throw new PoolError("account_selection_required");
+        const pool = selected[0];
+        const source = configuredProfile(host, pool, selector, deps.home);
+        return await deps.launch(host, { ...pool, home: source }, runArgs, deps.home);
+      }
+      if (command === "run" && number !== undefined) throw new PoolError("unknown_argument");
       if (command === "run" && options.has("--account"))
         accountAt(selected[0], options.get("--account") as string);
-      found = true;
       if (host === "codex") {
         const retired = selected.some(
           (pool) => resolve(deps.home, pool.home) === resolve(deps.home, ".codex-pkls"),
@@ -458,8 +482,13 @@ export async function main(
           } else if (!account) {
             const listing = await deps.listClaude(pool, { home: deps.home, local: true });
             account = listing.current;
-            if (!account && original.home !== pool.home)
-              account = (await deps.listClaude(original, { home: deps.home, local: true })).current;
+            if (!account && listing.warnings?.length) throw new PoolError(listing.warnings[0]);
+            if (!account && original.home !== pool.home) {
+              const previous = await deps.listClaude(original, { home: deps.home, local: true });
+              if (!previous.current && previous.warnings?.length)
+                throw new PoolError(previous.warnings[0]);
+              account = previous.current;
+            }
             if (!account) throw new PoolError("account_current_not_in_pool");
           }
           if (host === "codex") {
@@ -493,7 +522,7 @@ export async function main(
       if (
         host === "codex" &&
         ["list", "sync", "run"].includes(command) &&
-        !local &&
+        (command !== "list" || usage) &&
         !(command === "run" && options.has("--account"))
       )
         await deps.syncCodex(deps.home, directories);

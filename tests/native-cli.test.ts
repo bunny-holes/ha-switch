@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { type CliDependencies, main } from "../src/cli.ts";
 import type { CodexSelectionPolicy } from "../src/selection.ts";
 import type { AccountUsage } from "../src/types.ts";
@@ -54,7 +54,7 @@ async function fixture(selection?: CodexSelectionPolicy) {
       expect(launchHome).toBe(home);
       launches.push({
         home: pool.home,
-        login: await Bun.file(join(home, pool.home, "auth.json")).text(),
+        login: await Bun.file(resolve(home, pool.home, "auth.json")).text(),
       });
       return 0;
     },
@@ -201,13 +201,14 @@ test("a pool configured with the native target preserves source account 1", asyn
   }
 });
 
-test("retired legacy run rejects without recreating its home", async () => {
+test("direct run bypasses the retired target without recreating it", async () => {
   const f = await fixture();
   try {
     await rm(join(f.home, ".codex-pkls"), { recursive: true });
-    expect(await f.run(["run", "codex", "--pool", "pkls", "--account", "2"])).not.toBe(0);
-    expect(f.errors.join("\n")).toContain("pool_home_retired");
-    expect(f.launches).toHaveLength(0);
+    expect(await f.run(["run", "codex", "--pool", "pkls", "--account", "2"])).toBe(0);
+    expect(f.errors).toEqual([]);
+    expect(f.launches).toEqual([{ home: resolve(f.home, labels[1]), login: auth(2) }]);
+    expect(f.queries).toEqual([]);
     expect(await Bun.file(join(f.home, ".codex-pkls", "auth.json")).exists()).toBe(false);
     expect(await Bun.file(join(f.home, ".codex", "auth.json")).text()).toBe(auth(1));
   } finally {

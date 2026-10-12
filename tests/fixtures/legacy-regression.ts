@@ -57,7 +57,7 @@ export async function legacyRegression(executable: string) {
     };
     const listing = await run(["-h", "x", "--pool", "team", "--local"]);
     assert.equal(listing.code, 0);
-    assert.match(listing.output, /\*\s+2\s+\.codex-account-a/);
+    assert.match(listing.output, /2\s+\.codex-account-a\s+<home>\/\.codex-account-a/);
     const switched = await run(["-h", "x", "--pool", "team", "-s", "3"]);
     assert.equal(switched.code, 0);
     assert.equal(
@@ -69,10 +69,11 @@ export async function legacyRegression(executable: string) {
       "synthetic-native",
     );
     const selectedListing = await run(["-h", "x", "--pool", "team", "--local"]);
-    assert.match(selectedListing.output, /\*\s+3\s+\.codex-account-b/);
+    assert.match(selectedListing.output, /3\s+\.codex-account-b\s+<home>\/\.codex-account-b/);
     const launched = await run([
       "run",
       "codex",
+      ".codex-account-b",
       "--pool",
       "team",
       "--",
@@ -82,7 +83,7 @@ export async function legacyRegression(executable: string) {
     assert.equal(launched.code, 7);
     assert.equal(
       launched.output,
-      "<home>/.codex-team\n--yolo\n-c\nweb_search=live\n-c\nmodel_reasoning_effort=medium\nresume\nsynthetic-session\n",
+      "<home>/.codex-account-b\n--yolo\n-c\nweb_search=live\n-c\nmodel_reasoning_effort=medium\nresume\nsynthetic-session\n",
     );
     return { listing, switched, selectedListing, launched };
   } finally {
@@ -97,6 +98,6 @@ if (import.meta.main) {
   for (const executable of executables.slice(1))
     assert.deepEqual(await legacyRegression(executable), baseline);
   console.log(
-    `[ha-switch:legacy-regression:success] executables=${executables.length} list/switch/resume unchanged`,
+    `[ha-switch:legacy-regression:success] executables=${executables.length} configuration list/source launch/explicit switch verified`,
   );
 }
