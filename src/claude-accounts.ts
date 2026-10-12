@@ -4,6 +4,7 @@ import { homedir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { errorCode, PoolError } from "./errors.ts";
 import { isKeychainFailure, keychainFailure } from "./keychain.ts";
+import { readKeychainContext } from "./keychain-context.ts";
 import { logger } from "./log.ts";
 import { localProfiles } from "./profiles.ts";
 import type { AccountListing, AccountRow, Pool, Pools, RateLimits, RateWindow } from "./types.ts";
@@ -115,7 +116,9 @@ export const macKeychain: ClaudeDependencies["keychain"] = {
       log("keychain_read_success");
       return value ?? undefined;
     } catch (error) {
-      const failure = keychainFailure(error);
+      let failure = keychainFailure(error);
+      if (failure.code === "keychain_interaction_not_allowed")
+        failure = keychainFailure(error, "read", await readKeychainContext());
       if (failure.code === "keychain_item_missing") return undefined;
       log("keychain_read_failure", { code: failure.code }, "error");
       throw failure;
@@ -128,7 +131,9 @@ export const macKeychain: ClaudeDependencies["keychain"] = {
       await Bun.secrets.set({ service, name: keychainAccount(), value });
       log("keychain_write_success");
     } catch (error) {
-      const failure = keychainFailure(error, "write");
+      let failure = keychainFailure(error, "write");
+      if (failure.code === "keychain_interaction_not_allowed")
+        failure = keychainFailure(error, "write", await readKeychainContext());
       log("keychain_write_failure", { code: failure.code }, "error");
       throw failure;
     }

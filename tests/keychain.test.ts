@@ -48,6 +48,8 @@ describe("keychain failures", () => {
 
   test("known boundary errors retain their classification", () => {
     for (const code of [
+      "keychain_locked",
+      "keychain_no_gui_session",
       "keychain_interaction_not_allowed",
       "keychain_access_denied",
       "keychain_item_missing",
@@ -55,6 +57,45 @@ describe("keychain failures", () => {
     ]) {
       expect(keychainFailure(new PoolError(code)).code).toBe(code);
     }
+  });
+
+  test.each([
+    [{ unlocked: false, hasGraphicAccess: false }, "keychain_locked"],
+    [{ unlocked: false, hasGraphicAccess: true }, "keychain_locked"],
+    [{ unlocked: true, hasGraphicAccess: false }, "keychain_no_gui_session"],
+    [{ hasGraphicAccess: false }, "keychain_no_gui_session"],
+    [{ unlocked: true, hasGraphicAccess: true }, "keychain_interaction_not_allowed"],
+    [{ unlocked: true }, "keychain_interaction_not_allowed"],
+    [{}, "keychain_interaction_not_allowed"],
+  ])("uses measured session context for interaction failures", (context, expected) => {
+    for (const error of [
+      { code: "ERR_SECRETS_INTERACTION_NOT_ALLOWED" },
+      { status: -25308 },
+      { code: "ERR_SECRETS_INTERACTION_REQUIRED" },
+    ]) {
+      expect(keychainFailure(error, "read", context).code).toBe(expected);
+    }
+  });
+
+  test("session context does not change unrelated failures", () => {
+    const context = { unlocked: false, hasGraphicAccess: false };
+    expect(keychainFailure({ status: -25293 }, "read", context).code).toBe(
+      "keychain_access_denied",
+    );
+    expect(keychainFailure({ status: -25300 }, "read", context).code).toBe("keychain_item_missing");
+    expect(keychainFailure(new Error("synthetic failure"), "write", context).code).toBe(
+      "keychain_write_failed",
+    );
+  });
+
+  test("locked guidance unlocks, remote session guidance does not repeat unlock advice", () => {
+    const locked = keychainErrorMessage("keychain_locked");
+    const remote = keychainErrorMessage("keychain_no_gui_session");
+    expect(locked).toContain("security unlock-keychain ~/Library/Keychains/login.keychain-db");
+    expect(remote).toContain("Terminal");
+    expect(remote).not.toContain("unlock-keychain");
+    expect(remote).not.toContain("\n");
+    expect(locked).not.toContain("\n");
   });
 
   test("interaction guidance gives an unlock command without a password argument", () => {

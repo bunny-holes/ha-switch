@@ -1,7 +1,10 @@
 import { PoolError } from "./errors.ts";
+import type { KeychainContext } from "./keychain-context.ts";
 
 const known = new Set([
   "keychain_interaction_not_allowed",
+  "keychain_locked",
+  "keychain_no_gui_session",
   "keychain_access_denied",
   "keychain_item_missing",
   "keychain_unavailable",
@@ -9,7 +12,11 @@ const known = new Set([
   "keychain_write_failed",
 ]);
 
-export function keychainFailure(error: unknown, operation: "read" | "write" = "read"): PoolError {
+export function keychainFailure(
+  error: unknown,
+  operation: "read" | "write" = "read",
+  context: KeychainContext = {},
+): PoolError {
   if (error instanceof PoolError && known.has(error.code)) return error;
   const value =
     error !== null && typeof error === "object" ? (error as Record<string, unknown>) : {};
@@ -23,8 +30,11 @@ export function keychainFailure(error: unknown, operation: "read" | "write" = "r
       -25308,
       -25315,
     ])
-  )
+  ) {
+    if (context.unlocked === false) return new PoolError("keychain_locked");
+    if (context.hasGraphicAccess === false) return new PoolError("keychain_no_gui_session");
     return new PoolError("keychain_interaction_not_allowed");
+  }
   if (
     matches([
       "ERR_SECRETS_AUTH_FAILED",
@@ -43,8 +53,12 @@ export function keychainFailure(error: unknown, operation: "read" | "write" = "r
 
 export function keychainErrorMessage(code: string): string {
   switch (code) {
+    case "keychain_locked":
+      return "로그인 키체인이 잠겨 있습니다. security unlock-keychain ~/Library/Keychains/login.keychain-db 를 실행하고 암호는 프롬프트에 입력하세요.";
+    case "keychain_no_gui_session":
+      return "현재 실행 세션은 macOS 승인 창을 띄울 수 없습니다. 일반 Mac Terminal에서 명령을 실행하세요. 원격에서 시작한 Herdr 서버는 로컬에서 붙어도 같은 보안 세션을 유지할 수 있습니다.";
     case "keychain_interaction_not_allowed":
-      return "키체인이 잠겼거나 원격 세션에서 접근을 허용하지 않습니다. Mac에서 security unlock-keychain ~/Library/Keychains/login.keychain-db 를 실행하세요. 암호는 프롬프트에 입력하고, 계속 실패하면 Mac 화면에서 키체인 접근을 허용하세요.";
+      return "macOS가 키체인 접근에 필요한 확인을 허용하지 않습니다. 일반 Mac Terminal에서 실행하고 항목의 앱 접근 권한을 확인하세요. 실제 잠금 상태일 때만 security unlock-keychain ~/Library/Keychains/login.keychain-db 를 실행하세요.";
     case "keychain_access_denied":
       return "키체인 접근이 거부됐습니다. Mac 화면의 키체인 접근 앱에서 접근 권한을 확인하세요.";
     case "keychain_item_missing":

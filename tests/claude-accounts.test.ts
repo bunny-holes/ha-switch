@@ -463,6 +463,8 @@ test("shortcut Claude switching preserves the legacy target backup and restores 
 test("blocked keychain listing keeps configured labels unknown and stops duplicate reads", async () => {
   for (const code of [
     "keychain_interaction_not_allowed",
+    "keychain_locked",
+    "keychain_no_gui_session",
     "keychain_access_denied",
     "keychain_unavailable",
     "keychain_read_failed",
