@@ -3,6 +3,7 @@ import { accountAt } from "./account-table.ts";
 import type { Host } from "./config.ts";
 import { PoolError } from "./errors.ts";
 import { profileDirectory } from "./pool.ts";
+import { resolveAccountLabel } from "./selection.ts";
 import type { Pool } from "./types.ts";
 
 function sourceDirectory(host: Host, pool: Pool, label: string, home: string): string | undefined {
@@ -22,6 +23,14 @@ export function configuredProfile(
   const directory = sourceDirectory(host, pool, label, home);
   if (!directory) throw new PoolError("account_source_missing");
   return directory;
+}
+
+export function configuredSelector(
+  pool: Pool,
+  selector: string,
+  previous?: string,
+): string {
+  return resolveAccountLabel(pool.accounts, selector, previous);
 }
 
 export function profileList(host: Host, pool: Pool, home: string): string {

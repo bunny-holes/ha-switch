@@ -1,7 +1,8 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { version } from "../package.json";
-import { accountAt, accountTable } from "./account-table.ts";
+import { accountAt, accountJson, accountTable, dashboardTable } from "./account-table.ts";
+import { addProfile, nativeLogin } from "./add.ts";
 import {
   captureAgyAccount,
   listAgyAccounts,
@@ -42,57 +43,70 @@ import {
   verifySelectedCodexAccount,
 } from "./pool.ts";
 import { configuredProfile, profileList } from "./profile-launch.ts";
-import { selectCodexAccount } from "./selection.ts";
+import { configuredSelector } from "./profile-launch.ts";
+import { resolveAccountLabel, selectCodexAccount } from "./selection.ts";
+import { currentSelection, previousSelection, readSelectionState, recordSelection, selectionStatePath } from "./state.ts";
 import type { AccountListing, Pool, Pools } from "./types.ts";
 import { codexAccountUsage } from "./usage.ts";
+import { applyUsageCache, readUsageCache, saveUsageCache, usageCachePath } from "./usage-cache.ts";
 
 const HELP = `HA Switch ${version}
-Usage: has [OPTIONS]
-       has <COMMAND> [ARGS...]
+Switch saved Codex, Claude Code, and Antigravity profiles on macOS.
 
-has                          Show help
-has --list                   List managed harnesses, profile names and source paths
-has x                        Start Codex in ~/.codex with bypass flags
-has c                        Start Claude in ~/.claude with bypass flags
-has c -s 2                   Select Claude profile 2 and start it in ~/.claude
-has x --safe                 Omit bypass flags; native permission settings apply
-has switch 2                 Select Codex profile 2 in ~/.codex
-has -h c                     List Claude profiles
-has -h c -s 2                Switch Claude to profile 2
-has -c a personal            Save the current Antigravity login as personal
+Usage:
+  has
+  has list [TOOL] [--usage] [--json]
+  has run TOOL [SELECTOR] [--safe] [--isolated] [-- ARGS...]
+  has switch TOOL [SELECTOR]
+  has add TOOL NAME
+  has restore TOOL
 
---list                       List all configured harnesses or the selected harness
--h, --harness HARNESS         c/claude, x/codex, a/antigravity (agy)
--s, --switch NUMBER           Switch a harness; for x/c, select an account before launch
--c, --create HARNESS          Save the current Antigravity login; a label is required
---help                       Show help
---version                    Show version
---safe                       Omit bypass flags for x/c, including flags in pool args
---dry-run                    Show x/c launch arguments without credential reads or writes
+Examples:
+  has
+  has list codex --usage
+  has run codex                    # choose by usage policy, shared home
+  has run claude work -- --resume  # named shared-home run
+  has run claude work --isolated   # this terminal only
+  has switch codex personal
+  has switch claude -              # previous selection
+  has add codex work
+  has restore codex                # first pre-switch login
 
 Commands:
+  list       show profiles; --usage refreshes live usage
+  run        select, optionally switch, and start a profile
+  switch     change the shared native login without starting the tool
+  add        run the official login flow and register a new profile
+  restore    restore the first safe pre-switch login
 
-list [codex|claude|agy] [--pool NAME] [--usage|--local]
-switch <codex|claude|agy> [NUMBER] [--pool NAME]
-sync [codex|claude|agy] [--pool NAME]
-restore <codex|claude|agy> [--pool NAME]
-save agy <LABEL> [--pool NAME]
-run <codex|claude> <LABEL|NUMBER> [--pool NAME] [-- ARGS...]
-run agy [--pool NAME] [--account NUMBER] [-- ARGS...]
-x|c [--pool NAME] [--account NUMBER|-s NUMBER] [--safe] [--dry-run] [-- ARGS...]
-switch [NUMBER] [--pool NAME] [--local]
-restore [--pool NAME]
-restore c [--pool NAME]       Restore the shortcut Claude home
-init
-import --from DIRECTORY
+Options:
+  --pool NAME          use one configured pool
+  --config-dir DIR     use another ha-switch config directory
+  --usage              refresh account usage (list only)
+  --json               print schemaVersion 1 JSON (list/dashboard only)
+  --isolated           run from a source profile; do not change shared login
+  --safe               omit pool args and approval-bypass flags
+  --color MODE         auto, always, or never (default: auto)
+  --no-input           never open a selector
+  -h, --help           show this help
+  -V, --version        show the version
 
-Default: show help. Selecting only a harness lists its profiles.
-Create supports Antigravity only. Sign in with agy first.
-Default lists read configuration only. --usage reads credentials and queries usage.
---local is an alias for configuration-only listing; it cannot be combined with --usage.
-run codex/claude requires a source profile; --account NUMBER is also accepted.
-Common: --config-dir DIRECTORY
-One pool is selected automatically. Use --pool when switching among several.`;
+Selector:
+  -                    previous successful shared selection
+  2                    row number
+  work                 exact name
+  wor                  one unique name fragment
+
+Notes:
+  has is a fast local/cache dashboard and never waits for input.
+  has run codex uses the configured selection policy and live usage.
+  run --isolated is the only run mode that leaves the shared login alone.
+  Prompts run only when stdin and stdout are TTYs.
+  NO_COLOR=1 disables color. Secrets and raw credentials are never printed.
+  Run has list --usage when you need fresh usage data.
+
+Legacy spellings are not shown: x/c -> run, --list -> list, -s -> switch,
+-c -> add, and --account -> a positional selector.`;
 
 const HARNESSES: Record<Host, { shortcut: string; title: string }> = {
   codex: { shortcut: "x", title: "Codex" },
@@ -144,6 +158,7 @@ export interface CliDependencies {
   init: typeof initConfiguration;
   import: typeof importConfiguration;
   launch: typeof launch;
+  login: typeof nativeLogin;
 }
 
 function selectPools(pools: Pools, name: string | undefined, one: boolean): Pool[] {

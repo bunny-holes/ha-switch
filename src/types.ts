@@ -38,6 +38,8 @@ export interface AccountRow {
   plan?: string | null;
   resetCredits?: number | null;
   resetError?: string;
+  usageFetchedAt?: number;
+  usageStale?: boolean;
   credentialError?: string;
   rateLimits?: RateLimits | null;
 }

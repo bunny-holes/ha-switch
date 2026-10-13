@@ -9,6 +9,35 @@ export interface CodexSelectionPolicy {
   minimumFallbackWeeklyRemaining?: number;
 }
 
+export function matchingAccountLabels(accounts: readonly string[], selector: string): string[] {
+  const query = selector.toLocaleLowerCase();
+  const exact = accounts.filter((account) => account.toLocaleLowerCase() === query);
+  if (exact.length) return exact;
+  return accounts.filter((account) => account.toLocaleLowerCase().includes(query));
+}
+
+export function resolveAccountLabel(
+  accounts: readonly string[],
+  selector: string,
+  previous?: string,
+): string {
+  if (selector === "-") {
+    if (!previous) throw new PoolError("account_previous_missing");
+    if (!accounts.includes(previous)) throw new PoolError("account_previous_missing");
+    return previous;
+  }
+  if (/^\d+$/.test(selector)) {
+    const number = Number(selector);
+    if (Number.isSafeInteger(number) && number >= 1 && number <= accounts.length)
+      return accounts[number - 1] as string;
+    throw new PoolError("account_number_invalid");
+  }
+  const matches = matchingAccountLabels(accounts, selector);
+  if (!matches.length) throw new PoolError("account_selector_not_found");
+  if (matches.length > 1) throw new PoolError("account_selector_ambiguous");
+  return matches[0] as string;
+}
+
 export function validateCodexSelectionPolicy(
   value: unknown,
 ): asserts value is CodexSelectionPolicy {

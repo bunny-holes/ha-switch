@@ -95,6 +95,51 @@ export async function importConfiguration(
   return configurations;
 }
 
+export async function appendProfile(
+  directory: string,
+  host: Host,
+  poolName: string,
+  label: string,
+  source: string,
+  home = homedir(),
+): Promise<void> {
+  const path = poolsPath(directory, host);
+  const before = await readPools(path, home);
+  const current = before[poolName] ?? {
+    home: host === "codex" ? ".codex-ha-switch" : host === "claude" ? ".claude" : ".gemini",
+    accounts: [],
+  };
+  if (current.accounts.includes(label)) throw new PoolError("account_label_taken");
+  const nextPool = {
+    ...current,
+    accounts: [...current.accounts, label],
+    ...(host === "agy"
+      ? {}
+      : { from: { ...(current.from ?? {}), [label]: source } }),
+  };
+  const next = validateHostPools(host, { ...before, [poolName]: nextPool });
+  const expected = (await Bun.file(path).exists()) ? await Bun.file(path).text() : undefined;
+  if (expected !== undefined && (await Bun.file(path).text()) !== expected)
+    throw new PoolError("config_changed");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${crypto.randomUUID()}.tmp`;
+  const mode = expected === undefined ? 0o600 : (await stat(path)).mode & 0o777;
+  try {
+    await Bun.write(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode });
+    await rename(temporary, path);
+  } catch (error) {
+    try {
+      await unlink(temporary);
+    } catch (cleanup) {
+      if (!(cleanup instanceof Error && "code" in cleanup && cleanup.code === "ENOENT"))
+        throw new PoolError("config_cleanup_failed", undefined, {
+          cause: new AggregateError([error, cleanup]),
+        });
+    }
+    throw error;
+  }
+}
+
 export async function saveAgyConfiguration(
   directory: string,
   previous: Pools,
