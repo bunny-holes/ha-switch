@@ -38,7 +38,7 @@ GitHub Releases provide the CLI package and a separate agent skill.
 Install Bun 1.4.2 or later, then install the CLI package from its release URL.[^bun-add]
 
 ```bash
-bun add --global --ignore-scripts https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/ha-switch-0.1.0.tgz
+bun add --global --ignore-scripts https://github.com/bunny-holes/ha-switch/releases/download/v0.2.0/ha-switch-0.2.0.tgz
 export PATH="$(bun pm bin --global):$PATH"
 has -h
 has --version
@@ -46,8 +46,6 @@ has --version
 
 The command is `has`; the package name stays `@bunny-holes/ha-switch`.
 You also need the native `codex`, `claude`, or `agy` command for the tools you use.
-The published v0.1.0 package predates this command surface. Until the next release,
-build and install from source using the Development section below.
 
 ## ⚡ Five commands
 
@@ -84,7 +82,7 @@ never queries the network, and never waits for input.
 
 ```text
 $ has
-HA Switch 0.1.0 · local dashboard
+HA Switch 0.2.0 · local dashboard
 
 TOOL    #  NAME      SHARED HOME       5H LEFT  5H RESET  7D LEFT  7D RESET  CREDITS  STATUS
 codex   1  work      current · 4m ago  74%      in 1h     61%      in 2d     2        fresh · 4m ago
@@ -325,8 +323,8 @@ For Codex, install it under `~/.agents/skills/` and invoke `$has`.[^codex-skills
 For Claude Code, use `~/.claude/skills/` instead and invoke `/has`.[^claude-skills]
 
 ```bash
-has_skill_archive="$(mktemp -d)/has-skill-0.1.0.tgz"
-curl -fL https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/has-skill-0.1.0.tgz -o "$has_skill_archive"
+has_skill_archive="$(mktemp -d)/has-skill-0.2.0.tgz"
+curl -fL https://github.com/bunny-holes/ha-switch/releases/download/v0.2.0/has-skill-0.2.0.tgz -o "$has_skill_archive"
 mkdir -p "$HOME/.agents/skills"
 test ! -e "$HOME/.agents/skills/has" && tar -xzf "$has_skill_archive" -C "$HOME/.agents/skills"
 ```
@@ -459,8 +457,8 @@ bun scripts/build.ts /tmp/ha-switch-local.tgz
 bun add --global --ignore-scripts /tmp/ha-switch-local.tgz
 ```
 
-For release artifacts, `bun run pack:release /tmp/ha-switch-release-0.1.0` writes
-`ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, and `SHA256SUMS`.
+For release artifacts, `bun run pack:release /tmp/ha-switch-release-0.2.0` writes
+`ha-switch-0.2.0.tgz`, `has-skill-0.2.0.tgz`, and `SHA256SUMS`.
 It builds in temporary directories and refuses to replace existing release files.
 
 Tests use synthetic homes, fake binaries, and fake keychains; they never switch a real

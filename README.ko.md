@@ -38,7 +38,7 @@ GitHub Releases에서 CLI 패키지와 에이전트 스킬을 따로 받는다.
 Bun 1.4.2 이상을 설치하고 릴리스 주소로 CLI를 설치한다.[^bun-add]
 
 ```bash
-bun add --global --ignore-scripts https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/ha-switch-0.1.0.tgz
+bun add --global --ignore-scripts https://github.com/bunny-holes/ha-switch/releases/download/v0.2.0/ha-switch-0.2.0.tgz
 export PATH="$(bun pm bin --global):$PATH"
 has -h
 has --version
@@ -46,8 +46,6 @@ has --version
 
 실행 명령은 `has`다. 패키지 이름은 `@bunny-holes/ha-switch`를 유지한다.
 쓸 도구의 앱 명령인 `codex`, `claude`, `agy`도 필요하다.
-공개된 v0.1.0 패키지에는 이 명령 체계가 없다. 다음 릴리스 전에는
-아래 개발 절의 명령으로 소스를 빌드하고 설치한다.
 
 ## ⚡ 명령 다섯 개
 
@@ -83,7 +81,7 @@ has restore TOOL
 
 ```text
 $ has
-HA Switch 0.1.0 · local dashboard
+HA Switch 0.2.0 · local dashboard
 
 TOOL    #  NAME      SHARED HOME       5H LEFT  5H RESET  7D LEFT  7D RESET  CREDITS  STATUS
 codex   1  work      current · 4m ago  74%      in 1h     61%      in 2d     2        fresh · 4m ago
@@ -319,8 +317,8 @@ Codex는 `~/.agents/skills/`에 설치하고 `$has`로 부른다.[^codex-skills]
 Claude Code는 대신 `~/.claude/skills/`에 설치하고 `/has`로 부른다.[^claude-skills]
 
 ```bash
-has_skill_archive="$(mktemp -d)/has-skill-0.1.0.tgz"
-curl -fL https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/has-skill-0.1.0.tgz -o "$has_skill_archive"
+has_skill_archive="$(mktemp -d)/has-skill-0.2.0.tgz"
+curl -fL https://github.com/bunny-holes/ha-switch/releases/download/v0.2.0/has-skill-0.2.0.tgz -o "$has_skill_archive"
 mkdir -p "$HOME/.agents/skills"
 test ! -e "$HOME/.agents/skills/has" && tar -xzf "$has_skill_archive" -C "$HOME/.agents/skills"
 ```
@@ -443,8 +441,8 @@ bun scripts/build.ts /tmp/ha-switch-local.tgz
 bun add --global --ignore-scripts /tmp/ha-switch-local.tgz
 ```
 
-릴리스 파일은 `bun run pack:release /tmp/ha-switch-release-0.1.0`으로 만든다. 결과는
-`ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, `SHA256SUMS`다. 임시 폴더에서 빌드하며
+릴리스 파일은 `bun run pack:release /tmp/ha-switch-release-0.2.0`으로 만든다. 결과는
+`ha-switch-0.2.0.tgz`, `has-skill-0.2.0.tgz`, `SHA256SUMS`다. 임시 폴더에서 빌드하며
 같은 이름의 릴리스 파일이 있으면 덮어쓰지 않는다.
 
 시험은 합성 홈, 가짜 실행 파일, 가짜 키체인만 쓰며 실제 로그인을 바꾸지 않는다.

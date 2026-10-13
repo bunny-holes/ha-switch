@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+## 0.2.0 (2026-10-13)
+
 HA-3 interface redesign. The daily surface is `has`, `list`, `run`, `switch`, `add`, and `restore`.
 
 - Make bare `has` a local dashboard: configuration, the last recorded shared selection, and cached usage in one table, with no keychain, network, or input. An empty configuration prints the next step instead of an error.

@@ -1,6 +1,6 @@
 {
   "name": "@bunny-holes/ha-switch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "List usage and switch Codex, Claude Code, and Antigravity CLI accounts on macOS.",
   "type": "module",
   "packageManager": "bun@1.4.2",
