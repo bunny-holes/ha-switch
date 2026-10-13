@@ -384,7 +384,8 @@ async function switchTo(
   if (freshnessSource) await unchanged(freshnessSource, deps);
   await unchanged(target, deps);
   await unchanged(previous, deps);
-  if (backup)
+  // Keep the first pre-switch login; later switches never overwrite it.
+  if (backup && !(identity(saved) && login(saved.item.claudeAiOauth)))
     await writeSnapshot(
       saved,
       { claudeAiOauth: previous.item.claudeAiOauth ?? null, oauthAccount: meta(previous) ?? null },

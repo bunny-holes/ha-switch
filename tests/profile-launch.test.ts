@@ -8,6 +8,7 @@ function fixture() {
   const calls: string[] = [];
   const output: string[] = [];
   const errors: string[] = [];
+  const notes: string[] = [];
   const launched: { host: Host; pool: Pool; args: string[] }[] = [];
   const inaccessible = async () => {
     calls.push("credential-access");
@@ -16,8 +17,12 @@ function fixture() {
   const deps: Partial<CliDependencies> = {
     platform: "darwin",
     home: "/synthetic-home",
+    env: {},
+    interactive: false,
+    stdoutIsTTY: false,
     print: (text) => output.push(text),
     error: (text) => errors.push(text),
+    note: (text) => notes.push(text),
     readPools: async (path): Promise<Pools> =>
       path?.endsWith("agy-pools.json")
         ? {}
@@ -29,7 +34,6 @@ function fixture() {
               args: ["--configured"],
             },
           },
-    listCodex: inaccessible,
     listNativeCodex: inaccessible,
     listClaude: inaccessible,
     listAgy: inaccessible,
@@ -38,98 +42,100 @@ function fixture() {
     prepareCodex: inaccessible,
     useCodex: inaccessible,
     useClaude: inaccessible,
-    syncCodex: inaccessible,
-    syncClaude: inaccessible,
     verifyCodex: inaccessible,
+    readState: async () => ({ version: 1, selections: {} }),
+    updateState: async () => {
+      calls.push("state-write");
+      return {};
+    },
+    readCache: async () => ({}),
+    saveCache: async () => {
+      calls.push("cache-write");
+    },
     launch: async (host, pool, args) => {
       launched.push({ host, pool, args });
       return 17;
     },
   };
-  return { deps, calls, output, errors, launched };
+  return { deps, calls, output, errors, notes, launched };
 }
 
-test("direct runs select labels and one-based numbers despite every credential adapter failing", async () => {
-  for (const host of ["codex", "claude"]) {
-    for (const selector of ["personal", "1", "work", "2"]) {
+const bypass = {
+  codex: ["--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust"],
+  claude: ["--dangerously-skip-permissions"],
+};
+
+test("isolated runs select labels, numbers and fragments while every credential adapter fails", async () => {
+  for (const host of ["codex", "claude"] as const) {
+    for (const selector of ["personal", "1", "work", "2", "wor", "PERSONAL"]) {
       const f = fixture();
-      expect(await main(["run", host, selector, "--", "--version"], f.deps)).toBe(17);
+      expect(await main(["run", host, selector, "--isolated", "--", "--version"], f.deps)).toBe(17);
       expect(f.calls).toEqual([]);
       expect(f.errors).toEqual([]);
+      const personal = ["1", "personal", "PERSONAL"].includes(selector);
       expect(f.launched[0].pool.home).toBe(
-        ["1", "personal"].includes(selector)
-          ? "/synthetic-home/.profile-one"
-          : "/synthetic-other/profile-two",
+        personal ? "/synthetic-home/.profile-one" : "/synthetic-other/profile-two",
       );
-      expect(f.launched[0].pool.args).toEqual(["--configured"]);
-      expect(f.launched[0].args).toEqual(["--version"]);
+      expect(f.launched[0].pool.args).toEqual([]);
+      expect(f.launched[0].args).toEqual([...bypass[host], "--configured", "--version"]);
+      expect(f.notes).toEqual([
+        `${host === "codex" ? "Codex" : "Claude"}: starting isolated profile ${personal ? "personal" : "work"}...`,
+      ]);
     }
   }
 });
 
-test("default list aliases only read configured names and paths", async () => {
-  for (const args of [["list"], ["--list"], ["-h", "c"], ["switch"], ["list", "--local"]]) {
+test("--safe removes approval bypass flags and pool arguments from isolated runs", async () => {
+  const f = fixture();
+  expect(await main(["run", "codex", "work", "--isolated", "--safe", "--", "resume"], f.deps)).toBe(
+    17,
+  );
+  expect(f.launched[0].args).toEqual(["resume"]);
+});
+
+test("configuration-only lists never touch credentials and show source paths", async () => {
+  for (const args of [["list"], ["list", "claude"], []]) {
     const f = fixture();
     expect(await main(args, f.deps)).toBe(0);
     expect(f.calls).toEqual([]);
     expect(f.errors).toEqual([]);
-    expect(f.output.join("\n")).toContain("/synthetic-other/profile-two");
-    expect(f.output.join("\n")).not.toContain("current");
+    if (args[0] === "list") expect(f.output.join("\n")).toContain("/synthetic-other/profile-two");
+    expect(f.output.join("\n")).not.toContain("current ·");
   }
 });
 
-test("run rejects missing, unknown, conflicting and out-of-range selection before credential access", async () => {
-  for (const tail of [[], ["unknown"], ["0"], ["3"], ["personal", "--account", "1"]]) {
+test("isolated run rejects missing, unknown and out-of-range selection before credential access", async () => {
+  for (const tail of [[], ["unknown"], ["0"], ["3"], ["-"]]) {
     const f = fixture();
-    expect(await main(["run", "claude", ...tail], f.deps)).toBe(1);
+    expect(await main(["run", "claude", ...tail, "--isolated"], f.deps)).toBe(2);
     expect(f.calls).toEqual([]);
     expect(f.launched).toEqual([]);
   }
 });
 
-test("snapshot-only Claude accounts require a configured source for direct launch", async () => {
+test("snapshot-only Claude accounts require a configured source for isolated launch", async () => {
   const f = fixture();
   f.deps.readPools = async () => ({ team: { home: ".claude", accounts: ["personal"] } });
-  expect(await main(["run", "claude", "personal"], f.deps)).toBe(1);
-  expect(f.errors).toEqual(["has: account_source_missing"]);
+  expect(await main(["run", "claude", "personal", "--isolated"], f.deps)).toBe(1);
+  expect(f.errors[0]).toBe(
+    "has: account_source_missing — this profile has no source folder for isolated runs",
+  );
   expect(f.calls).toEqual([]);
   expect(await main(["list", "claude"], f.deps)).toBe(0);
-  expect(f.output[0]).toContain("(no source profile)");
+  expect(f.output[0]).toContain("(keychain only)");
 });
 
-test("usage is opt-in and rejects conflicting or unrelated options", async () => {
+test("shared Claude run with a name reports the keychain failure and offers the isolated run", async () => {
   const f = fixture();
-  expect(await main(["list", "claude", "--usage"], f.deps)).toBe(1);
+  expect(await main(["run", "claude", "work"], f.deps)).toBe(1);
   expect(f.calls).toEqual(["credential-access"]);
-  for (const args of [
-    ["list", "--usage", "--local"],
-    ["list", "--usage", "--usage"],
-    ["run", "claude", "1", "--usage"],
-  ]) {
-    const g = fixture();
-    expect(await main(args, g.deps)).toBe(1);
-    expect(g.calls).toEqual([]);
-  }
-});
-
-test("Claude shortcut keeps read failure instead of reporting an unregistered current account", async () => {
-  for (const fallback of [false, true]) {
-    const f = fixture();
-    let reads = 0;
-    f.deps.listClaude = async () => {
-      reads++;
-      return {
-        accounts: [],
-        ...(fallback && reads === 1 ? {} : { warnings: ["keychain_no_gui_session"] }),
-      };
-    };
-    expect(await main(["c"], f.deps)).toBe(1);
-    expect(f.errors.join("\n")).toContain("keychain_no_gui_session");
-    expect(f.errors.join("\n")).not.toContain("account_current_not_in_pool");
-    expect(reads).toBe(fallback ? 2 : 1);
-    expect(f.launched).toEqual([]);
-    expect(f.calls).toEqual([]);
-  }
+  expect(f.errors[0]).toStartWith("has: keychain_no_gui_session — ");
+  expect(f.errors[1]).toBe("Next: has run claude work --isolated");
+  expect(f.launched).toEqual([]);
+  f.calls.length = 0;
+  expect(await main(["run", "claude", "work", "--isolated"], f.deps)).toBe(17);
+  expect(f.calls).toEqual([]);
+  expect(f.launched[0].pool.home).toBe("/synthetic-other/profile-two");
 });
 
 test("native children receive independent profile environments without changing login files", async () => {
@@ -160,7 +166,7 @@ test("native children receive independent profile environments without changing 
       await chmod(binary, 0o755);
     }
     await Promise.all(
-      ["codex", "claude"].flatMap((host) =>
+      (["codex", "claude"] as const).flatMap((host) =>
         ["one", "two"].map(async (label) => {
           const child = Bun.spawn(
             [
@@ -169,6 +175,7 @@ test("native children receive independent profile environments without changing 
               "run",
               host,
               label,
+              "--isolated",
               "--",
               "--version",
             ],
@@ -182,6 +189,7 @@ test("native children receive independent profile environments without changing 
                 CODEX_HOME: "/synthetic-inherited",
                 CLAUDE_CONFIG_DIR: "/synthetic-inherited",
               },
+              stdin: "ignore",
               stdout: "pipe",
               stderr: "pipe",
             },
@@ -192,8 +200,12 @@ test("native children receive independent profile environments without changing 
             child.exited,
           ]);
           expect(code).toBe(0);
-          expect(err).toBe("");
-          expect(out).toBe(`${join(home, `.${host}-${label}`)}\n--version\n`);
+          expect(err).toBe(
+            `${host === "codex" ? "Codex" : "Claude"}: starting isolated profile ${label}...\n`,
+          );
+          expect(out).toBe(
+            `${join(home, `.${host}-${label}`)}\n${bypass[host].join("\n")}\n--version\n`,
+          );
         }),
       ),
     );
@@ -205,6 +217,7 @@ test("native children receive independent profile environments without changing 
         false,
       );
     }
+    expect(await Bun.file(join(directory, "state.json")).exists()).toBe(false);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

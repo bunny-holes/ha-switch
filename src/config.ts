@@ -1,6 +1,6 @@
 import { mkdir, open, rename, stat, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { validateAgyPools } from "./agy-accounts.ts";
 import { validateClaudePools } from "./claude-accounts.ts";
 import { PoolError } from "./errors.ts";
@@ -95,47 +95,96 @@ export async function importConfiguration(
   return configurations;
 }
 
-export async function appendProfile(
+export interface ProfileRegistration {
+  path: string;
+  expectedText?: string;
+  pool: string;
+  label: string;
+  source: string;
+  next: Pools;
+}
+
+const DEFAULT_HOME: Record<Host, string> = {
+  codex: ".codex",
+  claude: ".claude",
+  agy: ".gemini",
+};
+
+/** Checks name, pool, and source conflicts before any official login starts. */
+export async function prepareProfileRegistration(
   directory: string,
   host: Host,
-  poolName: string,
+  poolName: string | undefined,
   label: string,
   source: string,
   home = homedir(),
-): Promise<void> {
+): Promise<ProfileRegistration> {
   const path = poolsPath(directory, host);
-  const before = await readPools(path, home);
-  const current = before[poolName] ?? {
-    home: host === "codex" ? ".codex-ha-switch" : host === "claude" ? ".claude" : ".gemini",
-    accounts: [],
-  };
+  const file = Bun.file(path);
+  const expectedText = (await file.exists()) ? await file.text() : undefined;
+  const before = validateHostPools(host, await readPools(path, home));
+  const names = Object.keys(before);
+  const selected =
+    poolName ?? (names.length === 0 ? "default" : names.length === 1 ? names[0] : undefined);
+  if (!selected) throw new PoolError("pool_selection_required");
+  if (poolName && names.length && !Object.hasOwn(before, poolName))
+    throw new PoolError("pool_unknown");
+  const current = before[selected] ?? { home: DEFAULT_HOME[host], accounts: [] };
   if (current.accounts.includes(label)) throw new PoolError("account_label_taken");
+  const target = resolve(home, source);
+  for (const pool of Object.values(before))
+    for (const account of pool.accounts)
+      if (resolve(home, pool.from?.[account] ?? account) === target)
+        throw new PoolError("account_source_exists");
   const nextPool = {
     ...current,
     accounts: [...current.accounts, label],
-    ...(host === "agy"
-      ? {}
-      : { from: { ...(current.from ?? {}), [label]: source } }),
+    ...(host === "agy" ? {} : { from: { ...(current.from ?? {}), [label]: source } }),
   };
-  const next = validateHostPools(host, { ...before, [poolName]: nextPool });
-  const expected = (await Bun.file(path).exists()) ? await Bun.file(path).text() : undefined;
-  if (expected !== undefined && (await Bun.file(path).text()) !== expected)
-    throw new PoolError("config_changed");
+  const next = validateHostPools(host, { ...before, [selected]: nextPool });
+  return { path, expectedText, pool: selected, label, source, next };
+}
+
+/** Writes the prepared registration only when the file is unchanged since preflight. */
+export async function commitProfileRegistration(
+  directory: string,
+  registration: ProfileRegistration,
+): Promise<void> {
+  const { path, expectedText, next } = registration;
+  const file = Bun.file(path);
+  const currentText = (await file.exists()) ? await file.text() : undefined;
+  if (currentText !== expectedText) throw new PoolError("config_changed");
   await mkdir(directory, { recursive: true, mode: 0o700 });
+  const mode = expectedText === undefined ? 0o600 : (await stat(path)).mode & 0o777;
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
-  const mode = expected === undefined ? 0o600 : (await stat(path)).mode & 0o777;
+  const handle = await open(temporary, "wx", mode);
+  let closed = false;
   try {
-    await Bun.write(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode });
+    await handle.writeFile(`${JSON.stringify(next, null, 2)}\n`);
+    await handle.close();
+    closed = true;
+    const recheck = (await file.exists()) ? await file.text() : undefined;
+    if (recheck !== expectedText) throw new PoolError("config_changed");
     await rename(temporary, path);
   } catch (error) {
+    const causes: unknown[] = [error];
+    if (!closed) {
+      try {
+        await handle.close();
+      } catch (cleanup) {
+        causes.push(cleanup);
+      }
+    }
     try {
       await unlink(temporary);
     } catch (cleanup) {
       if (!(cleanup instanceof Error && "code" in cleanup && cleanup.code === "ENOENT"))
-        throw new PoolError("config_cleanup_failed", undefined, {
-          cause: new AggregateError([error, cleanup]),
-        });
+        causes.push(cleanup);
     }
+    if (causes.length > 1)
+      throw new PoolError("config_cleanup_failed", undefined, {
+        cause: new AggregateError(causes),
+      });
     throw error;
   }
 }

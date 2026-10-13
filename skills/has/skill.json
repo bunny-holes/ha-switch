@@ -1,5 +1,5 @@
 {
   "name": "has",
-  "description": "List profiles and usage, switch saved accounts, or launch Codex and Claude Code with has on macOS. Use for HA Switch account and shortcut launch tasks, not signing in to a new account.",
+  "description": "Show saved Codex, Claude Code, and Antigravity profiles with cached or live usage, open a tool on a chosen account in the shared home or an isolated source, switch or restore the shared login, and register accounts through the official sign-in with has on macOS.",
   "license": "MIT"
 }

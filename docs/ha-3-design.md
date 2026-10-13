@@ -621,3 +621,23 @@ alias claude-work='has run claude work --isolated --'
 - 이번 턴의 변경 범위: `docs/ha-3-design.md`, `docs/ha-3-competitors.md` 두 문서뿐.
 - 금지 유지: 실제 계정·이메일·토큰 출력, 실제 로그인 전환 시험, 실제 설정·`.zshenv` 수정, 릴리스·태그·전역 설치 교체.
 - 다음 행동: Claude 세션이 위 순서로 구현과 검증을 마무리한다. 이 Codex 세션은 문서 push와 커밋 해시 보고 뒤 멈춘다.
+
+## 16. 구현 결정 기록 (2026-10-13, Claude 세션)
+
+HA-4 인계에 따라 이 문서를 정본으로 구현을 마쳤다. 설계와 다르게 정하거나 설계가 비워 둔 곳을 채운 결정만 적는다. 화면 값은 모두 합성 데이터다.
+
+- **유지보수 명령**: `init`과 `import --from DIR`은 남기되 일상 도움말의 다섯 명령과 섞지 않고 Notes 끝 한 줄로만 적었다. `sync`와 `save`는 퇴역시켰다. 저장 로그인 동기화는 전환 전에 이미 수행되므로 별도 명령이 필요 없다.
+- **`--safe`의 뜻**: 설계대로 풀 `args`와 승인 생략 플래그를 모두 뺀다. 기존 `shortcutArguments`는 플래그만 빼므로 CLI가 풀 `args`를 빈 배열로 넘겨 설계 약속을 지켰다. 공유 run과 isolated run에 같은 정책을 적용했고, HA-2의 "source run은 플래그 없음" 동작은 설계대로 폐기했다.
+- **공유 대상**: Codex 공유 run·switch·restore는 풀 `home`과 무관하게 `~/.codex`를 대상으로 한다(`nativeCodexPool`). Claude는 `~/.claude`를 대상으로 하고 풀 `home`이 `.claude`가 아니면 `nativeBackup`으로 별도 백업 서비스를 쓴다. `pool_home_retired` 오류는 제거했다.
+- **Claude 백업 의미**: `switchTo`가 매 전환마다 백업을 덮어쓰던 것을 "백업이 비어 있을 때만 쓴다"로 바꿔 Codex·Antigravity와 같은 첫 전환 전 원본이 되게 했다. `restore claude` 문구가 설계 문구와 일치한다.
+- **직전 선택 seed**: 상태 파일에 기록이 없던 첫 전환에서도 `switch -`가 동작하도록 Codex는 전환 직전 `listNativeCodex`(auth.json 파일 읽기, 키체인 없음)의 current를 `previous`로 기록한다. Claude·Antigravity는 키체인 읽기가 필요하므로 상태 파일 기록만 쓴다.
+- **SHARED HOME 열**: 설계의 `current`에 확인 나이를 붙여 `current · 4m ago`로 표시한다. 기본 화면은 live 확인이 아니므로 시각을 함께 보여야 한다는 설계 원칙을 따랐다. 좁은 폭에서는 `*`와 각주로 접는다.
+- **상태 이름과 우선순위**: 한 `status` 값에 `query_failed > signed_out > stale > limited > fresh > unknown` 순으로 정했다. `credentialError`가 있으면 `unknown`이고 경고로 따로 낸다. JSON `queryError`에는 usage 조회 오류 또는 credential 오류 코드가 들어간다.
+- **JSON `source`**: 축약 없는 절대 경로를 기계 계약으로 고정했다. 사람용 표의 SOURCE 블록만 `~`로 줄인다. 키체인에만 있는 Claude 계정과 Antigravity는 `null`이다.
+- **선택기 취소 키**: `q`, 빈 입력 뒤 Enter, Ctrl-C, Ctrl-D를 취소로 처리한다. Esc 단독 입력은 readline 줄 입력에서 구분할 수 없어 지원하지 않았다. 잘못된 답은 세 번까지 다시 묻고 그 뒤 `selector_required`로 끝낸다.
+- **`add claude` 검증**: `claude auth status --json`을 stdout pipe로 메모리에서 읽어 `loggedIn === true`, `authMethod === "claude.ai"`, `configDirectory`가 새 source와 같은지만 확인한다. 공식 문서에 따라 `configDirectory`는 Claude Code 2.1.268 이상에서만 나오므로 그보다 오래된 본체에서는 `add_login_unverified`가 난다. 원시 응답은 출력·로그·파일에 남기지 않는다.
+- **`add` 실패 복구**: 로그인 종료 코드 130은 `cancelled`(130), 그 밖의 비정상 종료는 `add_login_failed`(1)다. 새 source 폴더는 지우지 않고 남겨 재시도에 쓰게 했다. 이미 비어 있지 않은 source 폴더는 `account_source_exists`로 로그인 전에 거부한다.
+- **사용량 캐시 stale 규칙**: 조회 시각이 1시간을 넘었거나, 조회 뒤 창의 초기화 시각이 지났으면 `stale`이다. 캐시는 대시보드와 목록 표시에만 쓰고 자동 선택에는 live 값만 쓴다.
+- **`list --usage`의 상태 기록**: credential 오류가 없을 때만 `checked`로 current를 기록한다. Codex `list --usage`는 더 이상 `syncCodex`를 호출하지 않는다.
+- **색 우선순위**: `--color never` > `--color always` > 비어 있지 않은 `NO_COLOR` > TTY 자동. JSON은 언제나 무색.
+- **종료 코드 2 범위**: 잘못된 명령·옵션·선택자, 모호한 선택, non-TTY 선택자 누락, 퇴역 명령·옵션, `pool_selection_required`, `pool_unknown`, `isolated_not_supported`. 나머지 실패는 1이다.

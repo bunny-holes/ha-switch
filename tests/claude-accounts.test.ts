@@ -500,3 +500,20 @@ test("missing login differs from an inaccessible keychain and malformed credenti
   f.keys.set(credentialService(".claude", home), "invalid");
   await expect(listClaudeAccounts(pool, f.deps)).rejects.toThrow("claude_credential_invalid");
 });
+
+test("the pre-switch backup is written once and later switches keep the first login", async () => {
+  const f = fixture();
+  f.setProfile(".claude", "synthetic-native", "native");
+  f.setProfile(".claude-work", "synthetic-work", "work");
+  f.setProfile(".claude-personal", "synthetic-personal", "personal");
+  await useClaudeAccount(pool, "work", f.deps);
+  const first = f.keys.get("ha-switch:claude-backup:team");
+  expect(JSON.parse(first as string).oauthAccount.accountUuid).toBe("synthetic-native");
+  await useClaudeAccount(pool, "personal", f.deps);
+  expect(f.keys.get("ha-switch:claude-backup:team")).toBe(first);
+  await restoreClaudeBackup(pool, f.deps);
+  expect(f.files.get(configPath(".claude", home))?.oauthAccount).toEqual(
+    snap("synthetic-native", "native").oauthAccount,
+  );
+  expect(f.keys.get("ha-switch:claude-backup:team")).toBe(first);
+});

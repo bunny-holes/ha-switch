@@ -44,6 +44,7 @@ export async function legacyRegression(executable: string) {
       const child = Bun.spawn([process.execPath, resolve(executable), ...args], {
         cwd: home,
         env: environment,
+        stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
       });
@@ -52,30 +53,38 @@ export async function legacyRegression(executable: string) {
         new Response(child.stderr).text(),
         child.exited,
       ]);
-      assert.equal(error, "");
+      assert.doesNotMatch(error, /has: /);
       return { output: output.replaceAll(home, "<home>"), code };
     };
-    const listing = await run(["-h", "x", "--pool", "team", "--local"]);
+    const listing = await run(["list", "codex", "--pool", "team"]);
     assert.equal(listing.code, 0);
-    assert.match(listing.output, /2\s+\.codex-account-a\s+<home>\/\.codex-account-a/);
-    const switched = await run(["-h", "x", "--pool", "team", "-s", "3"]);
+    assert.match(listing.output, /2\s+\.codex-account-a\s+unknown/);
+    assert.match(listing.output, /2\s+~\/\.codex-account-a/);
+    const switched = await run(["switch", "codex", "3", "--pool", "team"]);
     assert.equal(switched.code, 0);
+    assert.match(switched.output, /Codex: switched the shared home to \.codex-account-b\./);
     assert.equal(
-      (await Bun.file(join(target, "auth.json")).json()).tokens.account_id,
+      (await Bun.file(join(home, ".codex", "auth.json")).json()).tokens.account_id,
       "synthetic-b",
     );
     assert.equal(
-      (await Bun.file(join(home, ".codex", "auth.json")).json()).tokens.account_id,
+      (await Bun.file(join(target, "auth.json")).json()).tokens.account_id,
+      "synthetic-a",
+    );
+    assert.equal(
+      (await Bun.file(join(configuration, "codex-accounts", "native", "auth.json")).json()).tokens
+        .account_id,
       "synthetic-native",
     );
-    const selectedListing = await run(["-h", "x", "--pool", "team", "--local"]);
-    assert.match(selectedListing.output, /3\s+\.codex-account-b\s+<home>\/\.codex-account-b/);
+    const selectedListing = await run(["list", "codex", "--pool", "team"]);
+    assert.match(selectedListing.output, /3\s+\.codex-account-b\s+current/);
     const launched = await run([
       "run",
       "codex",
       ".codex-account-b",
       "--pool",
       "team",
+      "--isolated",
       "--",
       "resume",
       "synthetic-session",
@@ -83,7 +92,7 @@ export async function legacyRegression(executable: string) {
     assert.equal(launched.code, 7);
     assert.equal(
       launched.output,
-      "<home>/.codex-account-b\n--yolo\n-c\nweb_search=live\n-c\nmodel_reasoning_effort=medium\nresume\nsynthetic-session\n",
+      "<home>/.codex-account-b\n--dangerously-bypass-hook-trust\n--yolo\n-c\nweb_search=live\n-c\nmodel_reasoning_effort=medium\nresume\nsynthetic-session\n",
     );
     return { listing, switched, selectedListing, launched };
   } finally {
@@ -98,6 +107,6 @@ if (import.meta.main) {
   for (const executable of executables.slice(1))
     assert.deepEqual(await legacyRegression(executable), baseline);
   console.log(
-    `[ha-switch:legacy-regression:success] executables=${executables.length} configuration list/source launch/explicit switch verified`,
+    `[ha-switch:legacy-regression:success] executables=${executables.length} configuration list/isolated launch/explicit switch verified`,
   );
 }

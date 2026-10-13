@@ -73,10 +73,10 @@ test("packed executable works in an empty project without source files or state 
       ]);
       expect(code, error).toBe(0);
       if (args[0] === "--version") expect(output.trim()).toBe(manifest.version);
-      else {
-        expect(output).toContain("has --list");
-        expect(output).toContain("has -h c -s 2");
-      }
+      else if (args[0] === "--help") {
+        expect(output).toContain("has list [TOOL] [--usage] [--json]");
+        expect(output).toContain("has run claude work --isolated");
+      } else expect(output).toContain("No saved profiles.\nAdd: has add codex work");
     }
   } finally {
     await rm(temporary, { recursive: true, force: true });
@@ -136,7 +136,13 @@ test("release URL installs a global has command in an isolated directory and lis
         child.exited,
       ]);
       expect(code, error).toBe(0);
-      expect(output).toContain(args[0] === "--version" ? manifestVersion : "has --list");
+      expect(output).toContain(
+        args[0] === "--version"
+          ? manifestVersion
+          : args[0] === "--help"
+            ? "has list [TOOL]"
+            : "No saved profiles.",
+      );
     }
     const configuration = join(temporary, "config");
     await Bun.write(
@@ -149,7 +155,7 @@ test("release URL installs a global has command in an isolated directory and lis
         },
       }),
     );
-    const listing = Bun.spawn([executable, "--list", "--local", "--config-dir", configuration], {
+    const listing = Bun.spawn([executable, "list", "--config-dir", configuration], {
       cwd: temporary,
       env: environment,
       stdout: "pipe",

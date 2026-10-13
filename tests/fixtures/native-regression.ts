@@ -60,6 +60,7 @@ for await (const line of createInterface({ input: process.stdin })) {
           CODEX_HOME: join(home, ".inherited-home"),
           PATH: `${join(home, "bin")}:${process.env.PATH}`,
         },
+        stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
       });
@@ -83,24 +84,39 @@ for await (const line of createInterface({ input: process.stdin })) {
       await Bun.file(join(configuration, "codex-accounts", "native", "auth.json")).text(),
       auth(1),
     );
-    const explicit = await run(["x", "--account", "3"]);
-    assert.deepEqual(explicit, { output: "CODEX_HOME unset\n", error: "", code: 7 });
+    const explicit = await run(["run", "codex", "3"]);
+    assert.deepEqual(explicit, {
+      output: "CODEX_HOME unset\n",
+      error: "Starting Codex in shared home...\n",
+      code: 7,
+    });
     assert.equal(await login(), auth(3));
-    const automatic = await run(["x"]);
-    assert.deepEqual(automatic, explicit);
+    const automatic = await run(["run", "codex"]);
+    assert.equal(automatic.output, explicit.output);
+    assert.equal(automatic.code, 7);
+    assert.match(
+      automatic.error,
+      /^Selecting Codex account by usage policy\.\.\.\nCodex: using \.codex-pkl2 \(30% left, resets —\)\.\nStarting Codex in shared home\.\.\.\n$/,
+    );
     assert.equal(await login(), auth(3));
     await setUsage([80, 9, 9], [21, 80, 80]);
-    const fallback = await run(["x"]);
-    assert.deepEqual(fallback, explicit);
+    const fallback = await run(["run", "codex"]);
+    assert.equal(fallback.output, explicit.output);
+    assert.match(fallback.error, /Codex: using \.codex /);
     assert.equal(await login(), auth(1));
     await setUsage([80, 9, 9], [20, 80, 80]);
     const before = await Promise.all(
       labels.map((label) => Bun.file(join(home, label, "auth.json")).text()),
     );
-    const refused = await run(["x"]);
+    const refused = await run(["run", "codex"]);
     assert.equal(refused.code, 1);
     assert.equal(refused.output, "");
     assert.match(refused.error, /no_available_account.*사용 가능한 계정 없음/);
+    assert.match(refused.error, /Next: has run codex NAME/);
+    const dashboard = await run([]);
+    assert.equal(dashboard.code, 0);
+    assert.match(dashboard.output, /1\s+\.codex\s+current · just now\s+80%/);
+    assert.match(dashboard.output, /2\s+\.codex-pkl1\s+—\s+9%/);
     assert.deepEqual(
       await Promise.all(labels.map((label) => Bun.file(join(home, label, "auth.json")).text())),
       before,

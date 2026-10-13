@@ -1,5 +1,3 @@
-
-
 <div align="center">
 
 <img src="https://raw.githubusercontent.com/bunny-holes/ha-switch/main/assets/ha-switch.svg" width="112" height="112" alt="HA Switch logo: two account cards linked by arrows">
@@ -20,18 +18,19 @@ Codex · Claude Code · Antigravity CLI
 
 </div>
 
-List saved accounts and switch by number. Keep your settings, plugins, MCP credentials, and history.
+See your saved accounts and their remaining usage, then open the right one with one command.
+Settings, plugins, MCP credentials, and history stay where they are.
 HA means Harness Account.
 
-| Tool | Select with | Switch saved accounts | Usage in `has` |
-| --- | --- | --- | --- |
-| 🤖 Codex | `-h x` | ✅ | ✅ |
-| ✳️ Claude Code | `-h c` | ✅ | ✅ |
-| 🚀 Antigravity CLI | `-h a` | ✅ | Not yet |
+| Tool | `TOOL` | Shared-home switch | Isolated run | Usage in `has` |
+| --- | --- | --- | --- | --- |
+| 🤖 Codex | `codex` or `x` | ✅ | ✅ | ✅ |
+| ✳️ Claude Code | `claude` or `c` | ✅ | ✅ | ✅ |
+| 🚀 Antigravity CLI | `agy` or `a` | ✅ | Not documented upstream | Not yet |
 
 > [!NOTE]
-> Sign in with each tool first. `has` switches saved accounts.
-> `-c` saves the current Antigravity login; it does not open a new sign-in.
+> `has add codex NAME` and `has add claude NAME` open the official sign-in for a new profile.
+> `has add agy NAME` saves the Antigravity login you already made with `agy`.
 
 ## 📦 Install CLI
 
@@ -41,89 +40,283 @@ Install Bun 1.4.2 or later, then install the CLI package from its release URL.[^
 ```bash
 bun add --global --ignore-scripts https://github.com/bunny-holes/ha-switch/releases/download/v0.1.0/ha-switch-0.1.0.tgz
 export PATH="$(bun pm bin --global):$PATH"
-has --help
+has -h
 has --version
 ```
 
 The command is `has`; the package name stays `@bunny-holes/ha-switch`.
 You also need the native `codex`, `claude`, or `agy` command for the tools you use.
-The published v0.1.0 package predates `has x` and `has c`. Until the next release,
+The published v0.1.0 package predates this command surface. Until the next release,
 build and install from source using the Development section below.
 
-## ⚡ Run
+## ⚡ Five commands
 
-The executable is `has`. With no options, it shows help.
-
-```bash
+```text
 has
-has --list
-has x
-has c -s 2
-has x -- resume
-has x --safe
+has list [TOOL] [--usage] [--json]
+has run TOOL [SELECTOR] [--safe] [--isolated] [-- ARGS...]
+has switch TOOL [SELECTOR]
+has add TOOL NAME
+has restore TOOL
 ```
 
-Before installing a release, use `bun src/bin.ts` in this repository in place of `has`.
-
-Sign in with Codex and Claude accounts in their native profiles first.
-For Antigravity, save each login under a label after signing in with `agy`.
-
-`has x` starts Codex in `~/.codex`, with `CODEX_HOME` unset. `has c` starts Claude
-in `~/.claude`, with `CLAUDE_CONFIG_DIR` unset. Each shortcut applies the selected
-account to that native home. One pool is chosen automatically; several require
-`--pool NAME`. Use `--account N` or `-s N` to select one account before launch.
-Without a number, Codex chooses account 2 or 3 with at least 10% of its 5-hour
-usage remaining, preferring the larger remainder. If neither qualifies, account 1
-needs more than 20% weekly remaining. Otherwise it exits without launching.
-Unknown required usage or a failed query cannot qualify. Claude keeps its current
-configured account. Explicit account numbers skip automatic usage selection.
-
-The shortcuts add these native flags, once each:
-
-| Shortcut | Flags added |
+| You want to | Type |
 | --- | --- |
-| `has x` | `--dangerously-bypass-approvals-and-sandbox` (or an existing `--yolo`), `--dangerously-bypass-hook-trust` |
-| `has c` | `--dangerously-skip-permissions` |
+| See every account and the last known usage | `has` |
+| Open Codex on the account with the most usage left, in `~/.codex` | `has run codex` |
+| Open Claude with whatever `~/.claude` is signed in as | `has run claude` |
+| Open a named account in the shared home | `has run claude work -- --resume` |
+| Open another account next to it, in this terminal only | `has run claude work --isolated` |
+| Change the shared login without opening anything | `has switch codex personal` |
+| Go back to the previous selection | `has switch codex -` |
+| Refresh live usage | `has list --usage` |
+| Register a new account | `has add codex work` |
+| Put back the login from before the first switch | `has restore codex` |
 
-`--safe` removes these flags, including copies in pool arguments. Native permission
-settings still apply. `has x --dry-run` and `has c --dry-run` show the launch
-arguments without reading or writing credentials or starting the native CLI.
-Arguments after `--` go to the native CLI. For example, `has c -s 2 -- --resume`
-opens Claude's resume picker after selecting account 2.
+`-h` and `--help` always print help. Before a release, run `bun src/bin.ts` in this
+repository in place of `has`.
 
-## Direct profile launch (unreleased)
+### Dashboard: `has`
 
-```bash
-has run claude work -- --version
-has run codex 2 -- resume
-has list
-has list claude --usage
+With no arguments, `has` prints one screen and exits. It reads your configuration, the
+last recorded shared selection, and the last cached usage. It never reads the keychain,
+never queries the network, and never waits for input.
+
+```text
+$ has
+HA Switch 0.1.0 · local dashboard
+
+TOOL    #  NAME      SHARED HOME       5H LEFT  5H RESET  7D LEFT  7D RESET  CREDITS  STATUS
+codex   1  work      current · 4m ago  74%      in 1h     61%      in 2d     2        fresh · 4m ago
+codex   2  personal  —                 0%       in 12m    18%      in 2d     0        limited · 4m ago
+claude  1  work      unknown           42%      in 2h     ?        —         ?        stale · 2h ago
+agy     1  personal  unknown           ?        —         ?        —         ?        unknown
+
+Shared home is the last checked native login; isolated sessions are separate.
+Run:     has run <tool> <name>
+Live:    has list --usage
+Switch:  has switch <tool> <name>
 ```
 
-`run codex/claude <LABEL|NUMBER>` now starts the configured source profile using
-`CODEX_HOME` or `CLAUDE_CONFIG_DIR`. It does not read credentials or usage, synchronize
-logins, or replace the global login. The native app handles its own authentication.
-A source that is the native default home clears the inherited profile override.
-Labels match exactly; numbers start at 1. Use `--pool NAME` when needed.
-Pool `args` and arguments after `--` are preserved; no shortcut flags are added.
+`SHARED HOME` is the account last seen in the tool's own home (`~/.codex`, `~/.claude`,
+the Antigravity keyring). `current` carries the time of that check; `—` means the check
+found another account; `unknown` means nothing has been checked yet. A login changed by
+another app is not detected until the next `has list --usage`, `has switch`, or shared
+`has run`.
 
-**Changed behavior:** `run` previously launched the shared pool target and could
-synchronize or switch its login. Codex and Claude now require a source selection;
-`--account NUMBER` also selects a source, without switching. A missing selection
-returns `account_selection_required`. Claude snapshots without a source directory
-return `account_source_missing`; set `from` to an existing native profile.
-Paths come from `from`, or the Codex account path / Claude `.claude*` account path.
-These are the configured profiles, not a copy of the shared home's settings or history.
-If a configured source is the shared native home, it uses that home's current login;
-use a dedicated source profile for independent accounts.
-`run agy`, `x/c`, `-h`, `-s`, and explicit switching keep their existing behavior.
+`0%` and `0` are real values. `?` means unknown. `STATUS` separates `fresh`, `stale`
+(older than an hour or past a reset time), `limited`, `query failed`, `signed out`, and
+`unknown`. A failed query keeps the last good value and its age.
 
-Default lists (`list`, `--list`, `-h`, and `switch` without a number) now show only
-configured names and source paths. They do not read credentials or identify the
-current login. `--usage` enables the previous credential and usage queries.
-`--local` is a configuration-only alias and cannot be combined with `--usage`.
-Keychain-only accounts show `(no source profile)`. A failed current-login read
-keeps its read-error name instead of becoming `account_current_not_in_pool`.
+### List and live usage: `has list`
+
+`has list` shows the same local data per tool with a `SOURCE` block. `--usage` queries
+each tool: Codex through its app-server (`account/rateLimits/read`, never a model
+request), Claude through its usage endpoint, Antigravity sign-in state only. One failed
+row never hides the others; the exit code stays 0 and stderr gets one line per failure
+plus a `Next:` command.
+
+```text
+$ has list claude --usage
+Claude / default
+
+#  NAME      SHARED HOME         5H LEFT  5H RESET  7D LEFT  7D RESET  CREDITS  STATUS
+1  work      current · just now  42%      in 2h     63%      in 3d     1        fresh · just now
+2  personal  —                   18%      in 1h     51%      in 3d     ?        query failed · 18m ago
+
+SOURCE
+1  ~/.config/ha-switch/profiles/claude/work
+2  ~/.claude-sample
+```
+
+Narrow panes fold the table: the `SOURCE` block goes first, then `7D RESET`, then the
+compact layout keeps `#`, `NAME`, `HOME`, `5H`, `RESET`, `7D`, `CR` and prints status
+below the table. Long names are shortened with `…`.
+
+### Open a tool: `has run`
+
+| Input | What happens | Home |
+| --- | --- | --- |
+| `has run codex` | Picks an account by live usage and the pool's `selection` policy, replaces the shared login safely, starts Codex | `~/.codex` |
+| `has run codex work` | Validates the named account, replaces the shared login, starts Codex. No usage query | `~/.codex` |
+| `has run claude` | Starts Claude on the login already in the shared home. No keychain read | `~/.claude` |
+| `has run claude work` | Replaces the shared login, starts Claude | `~/.claude` |
+| `has run TOOL work --isolated` | Starts the tool on the account's own source folder. The shared login is untouched | configured source |
+| `has run agy [NAME]` | Optionally switches the Antigravity keyring, then starts `agy` | native keyring |
+
+Progress lines go to stderr; the tool's own stdout and exit code pass through unchanged.
+
+```text
+$ has run codex
+Selecting Codex account by usage policy...
+Codex: using work (74% left, resets in 1h).
+Starting Codex in shared home...
+```
+
+Every run adds the pool's `args` and these approval flags once each, before the
+arguments you pass after `--`:
+
+| Tool | Flags added |
+| --- | --- |
+| Codex | `--dangerously-bypass-approvals-and-sandbox` (an existing `--yolo` counts), `--dangerously-bypass-hook-trust` |
+| Claude | `--dangerously-skip-permissions` |
+
+`--safe` omits the pool `args` and those flags, so the tool's own permission settings
+apply. Arguments after `--` are always forwarded as written.
+
+`--isolated` runs use `CODEX_HOME` or `CLAUDE_CONFIG_DIR`. They do not copy settings,
+history, or plugins from the shared home, and they can run side by side. Antigravity
+has no documented isolated login, so `run agy --isolated` is refused.
+
+When a named shared Claude run cannot read the keychain (for example inside a pane
+without a graphical security session), `has` writes nothing, starts nothing, and names
+the isolated alternative:
+
+```text
+$ has run claude work
+has: keychain_no_gui_session — 현재 실행 세션은 macOS 승인 창을 띄울 수 없습니다. …
+Next: has run claude work --isolated
+```
+
+### Change the shared login: `has switch` and `has restore`
+
+```text
+$ has switch codex work
+Codex: switched the shared home to work.
+Open Codex sessions keep their current login.
+Previous selection: personal. To go back: has switch codex -
+
+$ has restore codex
+Codex: restored the first pre-switch login.
+Next: has
+```
+
+`switch TOOL -` returns to the previous successful shared selection. `restore TOOL`
+returns the login that the shared home held before `has` first replaced it. They are
+different: the backup is written once and later switches do not overwrite it. Processes
+that already loaded a login keep it until they restart.
+
+Before each switch, `has` writes the refreshed token back to its source, refuses mixed
+account identities, re-reads the target right before writing, and replaces files
+atomically. Run shared switches one at a time; never during a token refresh.
+
+### Selectors
+
+| Selector | Meaning |
+| --- | --- |
+| `-` | previous successful shared selection |
+| `2` | row number shown by `has` and `has list`, counted per pool |
+| `work` | exact name, case-insensitive |
+| `wor` | a fragment that matches exactly one name |
+
+Several matches open a numbered picker when both stdin and stdout are terminals.
+Enter confirms, `q`, Ctrl-C, or Ctrl-D cancels with exit code 130 and no change. In
+pipes, CI, with `--no-input`, or with `--json`, the command stops with
+`selector_required` or `account_selector_ambiguous` and lists the candidates instead.
+
+### Register an account: `has add`
+
+```text
+$ has add codex work
+Opening official Codex login for work...
+<official login flow>
+Codex: signed in and saved as work.
+Run: has run codex work
+```
+
+Codex runs `codex login` and Claude runs `claude auth login` with a new source folder
+under `~/.config/ha-switch/profiles/<tool>/<name>`. The profile is registered only after
+the sign-in is verified: Codex by the account in the new `auth.json`, Claude by
+`claude auth status --json` reporting `loggedIn`, the `claude.ai` method, and that same
+`configDirectory` (Claude Code 2.1.268 or later). The status output is checked in memory
+and never printed. A taken name or an existing source folder is refused before the
+sign-in starts. A cancelled or failed sign-in leaves configuration unchanged and the
+folder in place for a retry.
+
+`has add agy NAME` saves the Antigravity account that `agy` is currently signed in to.
+It does not start a new sign-in.
+
+### Options, exit codes, JSON
+
+| Option | Applies to |
+| --- | --- |
+| `--pool NAME` | pick one pool when a tool has several |
+| `--config-dir DIR` | use another configuration directory |
+| `--usage` | `list` only; query live usage |
+| `--json` | `has` and `list`; one schemaVersion 1 document on stdout |
+| `--isolated`, `--safe` | `run` only |
+| `--color auto\|always\|never` | default `auto`: color only on a terminal and when `NO_COLOR` is unset; `--color always` overrides `NO_COLOR` |
+| `--no-input` | never open a picker |
+| `-h`, `--help`, `-V`, `--version` | help and version |
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | success, including lists with some failed usage queries |
+| 1 | an operation failed: configuration, sign-in, native files, keychain |
+| 2 | wrong command, option, or selector; ambiguous match; missing selector outside a terminal; a retired command |
+| 130 | picker or sign-in cancelled |
+
+Errors print `has: CODE — reason` and a `Next:` command on stderr. Unknown exceptions
+never reveal their message; set `LOG_LEVEL=debug` for safe diagnostics.
+
+`--json` rows carry `tool`, `pool`, `number`, `name`, `source` (absolute path or
+`null`), `current` (`true`, `false`, or `null` when unchecked), `currentCheckedAt`,
+`authenticated`, `plan`, `status`, `usage` with ISO reset times, `resetCredits`,
+`usageFetchedAt`, `usageAgeSeconds`, and `queryError`. Errors are also one document:
+`{"schemaVersion":1,"command":"list","error":{"code","message","next"}}`. Tokens,
+account ids, email addresses, and raw responses never appear.
+
+## 🔄 Moving from the old commands
+
+The old top-level shortcuts and flags stop with exit code 2 and print the replacement.
+Nothing is read or written.
+
+| Old input | New input |
+| --- | --- |
+| `has x` | `has run codex` |
+| `has c` | `has run claude` |
+| `has x -s 2`, `has x --account 2` | `has run codex 2` |
+| `has -h c` | `has list claude` (`-h` alone is help) |
+| `has -h c -s 2` | `has switch claude 2` |
+| `has -s 2`, `has switch 2` | `has switch codex 2` |
+| `has -c a personal`, `has save agy personal` | `has add agy personal` |
+| `has --list`, `has --list --local` | `has list` |
+| `has run TOOL NAME` (source only) | `has run TOOL NAME --isolated` |
+| `has restore` | `has restore codex` |
+| `has x --dry-run`, `has sync` | removed; test a profile with `--isolated`, switching synchronizes saved logins |
+
+Existing `~/.config/ha-switch/*-pools.json` files work unchanged: labels that are folder
+names, `from` paths, `args`, and `selection` policies are all read as before. The
+shared home is always the tool's native home; a pool `home` other than `.codex` or
+`.claude` only tells `has` to keep a separate pre-switch backup. The retired
+`.codex-pkls` home no longer blocks any command.
+
+Shell aliases are a suggestion only; `has` never edits `~/.zshenv`:
+
+```zsh
+alias codex-auto='has run codex'
+alias claude-current='has run claude'
+alias claude-work='has run claude work --isolated --'
+```
+
+### Automatic Codex selection
+
+`has run codex` without a selector queries live usage for each saved account, then
+applies the pool's `selection` policy. Among priority accounts with at least the
+five-hour minimum left, the larger five-hour remainder wins, then the weekly remainder.
+Otherwise the fallback account needs more than the weekly floor. Failed queries and
+unknown values never qualify. If every query failed the command stops with
+`selection_usage_unavailable`; if nothing qualifies it stops with
+`no_available_account`. Neither case switches or launches.
+
+```json
+{
+  "priority": [2, 3],
+  "minimumFiveHourRemaining": 10,
+  "fallback": 1,
+  "minimumFallbackWeeklyRemaining": 20
+}
+```
 
 ## 🧩 Install the agent skill
 
@@ -138,184 +331,40 @@ mkdir -p "$HOME/.agents/skills"
 test ! -e "$HOME/.agents/skills/has" && tar -xzf "$has_skill_archive" -C "$HOME/.agents/skills"
 ```
 
-The last command refuses to replace an existing `has` skill. Keep that folder until you choose to update it.
-The skill is a separate download; installing the CLI does not install the skill.
+The last command refuses to replace an existing `has` skill. The skill is a separate
+download; installing the CLI does not install the skill.
 
 ## 🏁 First use
 
-Create configuration from the Codex and Claude profiles already on your computer:
+Register each account with the official sign-in:
 
 ```bash
-has init
-has switch --local
+has add codex work
+has add claude work
+has
 ```
 
-`init` writes local configuration without switching accounts.
-Start Codex with `has x` and Claude with `has c`. These use one native home per tool.
-Before the first native Codex switch, a source account stored in `~/.codex` is
-preserved under `~/.config/ha-switch/codex-accounts/native/auth.json`.
-The native home's login backup remains `~/.codex/auth.json.ha-switch-backup`.
-Other source profiles stay separate from the target. Claude keeps saved accounts
-in the macOS keychain and replaces only login and account metadata in the native home.
-`init` retains a `.codex-ha-switch` target for explicit pool switching; direct `run` ignores that target.
-If you already have pool configuration from toolbox, import that directory:
+If Codex or Claude profile folders already exist in your home, `has init` can create
+configuration from them without switching anything, and `has import --from DIRECTORY`
+copies pool files from an older location. Both are maintenance commands outside the
+daily help. `init` writes a `.codex-ha-switch` pool `home`; shared switching still
+targets `~/.codex`.
 
-```bash
-has import --from <directory>
-```
+Before the first native Codex switch, the login that `~/.codex` held is archived under
+`~/.config/ha-switch/codex-accounts/native/auth.json`, and the native home's own backup
+is `~/.codex/auth.json.ha-switch-backup`. Claude keeps saved accounts and its
+pre-switch backup in the macOS keychain.
 
-Import preserves the source configuration and saved accounts. It refuses different destination
-configuration. Existing Claude account snapshots are copied into HA Switch's keychain names.
-
-While signed in to an Antigravity account, save it once:
-
-```bash
-has -c a personal
-```
-
-Sign in to another account with `agy`, then save it under another label:
-
-```bash
-has -c a work
-has -h a
-has -h a -s 1
-```
-
-## 🔄 Move from toolbox
-
-Toolbox 0.37.0 removed `codex-auth` and `claude-auth`. A `codex-auth` function in
-`~/.zshenv` that calls the removed script will fail, along with `codex-pkls` and
-other aliases that use it. Use `has` for saved account switching and launches.
-
-If you have not imported your old pool configuration yet, its default location was:
-
-```bash
-has import --from "$HOME/.config/xiyo/toolbox"
-```
-
-Use the directory that holds your existing pool files. Import keeps the originals
-and preserves each pool's `args`. If you already imported them, use that configuration.
-
-| Old shell command | HA Switch command |
-| --- | --- |
-| `codex-pkls` | `has x` |
-| `codex-pkls-N` | `has x --account N -- ARGS` (or `has x -s N -- ARGS`) |
-| `codex-switch` | `has switch` |
-| `codex-switch NUMBER` | `has switch NUMBER` |
-| `claude-auth` launch wrapper | `has c` or `has c -s N` |
-
-Replace `N` or `NUMBER` with the number shown by `has switch --local`.
-Numbers start at 1 within that pool. Replace `ARGS` with native Codex arguments, or
-omit `-- ARGS` when none are needed. For example:
-
-```bash
-has x -s 2 -- resume
-has switch 2
-```
-
-Both shortcuts preserve pool `args`, such as `-c web_search=live`, before the
-arguments after `--`. Existing `--yolo` counts as Codex's approval bypass flag;
-the shortcut adds the hook trust flag if it is missing. Options kept only in an
-old shell function are not imported. `has run` keeps its existing flag behavior.
-
-The old `.codex-pkls` target is retired. Legacy target switching, sync, and
-restore paths targeting it fail with `pool_home_retired`; they never recreate it.
-Set the pool `home` to `.codex` and retain its account source list. The pool name
-`pkls` can remain as a configuration name; it no longer implies a separate home.
-Use `has switch codex N` and `has x --account N` for native-home selection.
-
-Treat `~/.codex` as replaceable slot 0. Slots 1, 2, and 3 retain their own account
-sources. The original `.codex` source is archived separately before slot 0 is
-replaced. Before switching, updated login tokens are synchronized back to the
-matching source. `*` marks the account currently applied to the native home.
-
-For shared-home switching and `x/c`, switch and launch one terminal at a time. Complete one before starting another;
-never run these operations concurrently or during an authentication refresh.
-Open sessions keep their loaded login. HA Switch rechecks changed state, rejects
-mixed account/token identities, and checks the selected account before launch.
-It cannot prevent a separate Codex process from writing the shared login file.
-
-The single home uses `~/.codex/config.toml`; settings are not copied from old homes.
-Use pool `args` for explicit overrides, such as `"-c", "model_reasoning_effort=medium"`.
-`has restore` restores the native Codex login.
-
-### Automatic Codex selection
-
-The same usage values and status rules drive `has -h x --usage` and automatic selection.
-Among eligible priority accounts, higher 5-hour remaining usage wins, then weekly
-remaining usage, then configured order. Query failures and unknown required usage
-cannot qualify. Account 1 at 20% weekly remaining or below is not eligible.
-Failure prints `no_available_account` and “사용 가능한 계정 없음”, returns 1,
-and does not switch or launch.
-
-Configure each pool's optional `selection` object:
-
-```json
-{
-  "priority": [2, 3],
-  "minimumFiveHourRemaining": 10,
-  "fallback": 1,
-  "minimumFallbackWeeklyRemaining": 20
-}
-```
-
-## 🎛️ Commands
-
-| Result | Command after `has` |
-| --- | --- |
-| Show help | `--help` |
-| Show configured profile names and source paths | `--list` |
-| Query current selections and usage | `--list --usage` |
-| Show Codex profiles and usage | `-h x --usage` |
-| Show native Codex profiles and usage | `switch --usage` |
-| Show Claude profiles and usage | `-h c --usage` |
-| Show saved Antigravity profiles | `-h a` |
-| Read local profile labels without usage requests or writes | `--list --local` |
-| Switch native Codex to profile number 2 | `switch 2` |
-| Switch the compatible Codex pool target | `-h x -s 2` |
-| Switch Claude to profile number 1 | `-h c -s 1` |
-| Switch Antigravity to profile number 2 | `-h a -s 2` |
-| Synchronize saved login copies | `sync` |
-| Restore native Codex's account from before its first switch | `restore` |
-| Restore a configured non-retired Codex target | `restore codex --pool NAME` |
-| Restore Claude's previous account | `restore claude` |
-| Restore Antigravity's account from before its first switch | `restore agy` |
-| Save the current Antigravity login | `-c a <label>` |
-| Start Codex in the native home | `x -- resume` |
-| Select an account before starting Codex | `x -s 2 -- resume` |
-| Start Claude in the native home | `c` |
-| Select an account and resume Claude | `c -s 2 -- --resume` |
-| Start a shortcut without bypass flags | `x --safe` or `c --safe` |
-| Inspect shortcut arguments without touching logins | `x --dry-run` or `c --dry-run` |
-| Start a source profile without switching | `run codex 2 -- resume` or `run claude work` |
-| Start Antigravity with its current login | `run agy` |
-| Create local configuration from existing profiles | `init` |
-| Import existing pool configuration and Claude snapshots | `import --from <directory>` |
-
-A harness is one of these coding tools. Use `-h` or `--harness` to choose it:
-`c` or `claude`, `x` or `codex`, and `a` or `antigravity`. The native name `agy` also works.
-Use `-s` or `--switch` to choose a profile number. For example,
-`has --harness claude --switch 2` selects Claude profile 2.
-With `has x` or `has c`, `-s N` is an alias for `--account N` and also starts the tool.
-`has -h c -s N` only switches the configured target; plain `claude` uses that login
-when the target is the default `~/.claude` home.
-Use `--help` for help; `-h` selects a harness.
-Use `-c` or `--create` with a harness and label to save the current Antigravity login:
-`has --create antigravity personal`. This option saves an existing login without starting sign-in.
-Codex and Claude account registration is not supported. `has save agy <label>` still works.
-
-Use `--pool <name>` when you have several pools for the same tool.
-Use `--config-dir <directory>` to select another configuration directory.
-`--version` prints the installed package version.
-
-With `--usage`, the table shows the current account, plan, status, five-hour remainder and reset time,
-weekly remainder and reset time, and available reset credits. Missing values stay unknown.
-A query failure stays visible in its account row. Reset credits are never consumed.
+While signed in to an Antigravity account, save it once with `has add agy personal`,
+sign in to the next account with `agy`, and save that one too.
 
 ## ⚙️ Configuration
 
-The default directory is `~/.config/ha-switch/`. Set `HA_SWITCH_CONFIG_DIR` to change it.
-Profile numbers follow account order within each pool's configuration.
+The default directory is `~/.config/ha-switch/`. Set `HA_SWITCH_CONFIG_DIR` or pass
+`--config-dir` to use another. Row numbers follow account order within each pool.
+`has` also keeps `state.json` (last shared selections and check times) and
+`usage-cache.json` (last usage values, reset times, and safe error codes) there. Neither
+file holds tokens.
 
 <details>
 <summary>Pool configuration examples</summary>
@@ -325,8 +374,9 @@ Profile numbers follow account order within each pool's configuration.
 ```json
 {
   "default": {
-    "home": ".codex-ha-switch",
-    "accounts": [".codex-personal", ".codex-work"],
+    "home": ".codex",
+    "accounts": ["work", "personal"],
+    "from": { "work": ".codex-work", "personal": ".codex-personal" },
     "args": ["-c", "model_reasoning_effort=medium"]
   }
 }
@@ -346,39 +396,23 @@ Profile numbers follow account order within each pool's configuration.
 
 Paths are resolved from your home directory. Absolute paths also work.
 Pool configuration stores paths and labels, never login tokens.
-`home` remains the target for explicit pool switching and `run agy`. Codex/Claude
-`run` uses the selected source path instead.
-`x` and `c` use the native home while keeping account order, source paths, and `args`.
-
-`agy-pools.json` is created by `has -c a <label>`. Its `accounts` list contains the saved labels.
+`agy-pools.json` is created by `has add agy NAME`; its `accounts` are the saved labels.
 
 </details>
 
-## ✅ Check the result
-
-Run `has switch --usage` to query the native Codex selection and usage. For configured
-pool targets, use `has -h x --usage`, `has -h c --usage`, or `has -h a --usage`.
-`*` marks the current profile only when that credential read succeeds.
-`has list` and `has --list --local` read configuration only.
-Codex `--usage` can refresh expired logins and synchronize saved copies.
-Claude `--usage` reads logins without changing them. Use `sync claude` to synchronize
-saved copies, and Claude itself to refresh an expired login.
-
 ## 🔐 Data and limits
 
-Codex copies native `auth.json` login data into the target profile and queries usage through the
-installed app-server. Claude and Antigravity use their native macOS keychain formats. Saved logins
-and login backups are kept in the keychain. No custom encrypted vault is created.
-Claude keeps one login copy per saved account and one restore copy per pool.
-These copies let it preserve an account when the target profile's login changes.
-Profile directories are not replaced. Settings, plugins, MCP credentials, and history stay in place.
-An already-running agent process can retain the login it loaded. Use the switched account on the
-next native launch.
+Codex copies native `auth.json` login data between source folders and the shared home
+and queries usage through the installed app-server. Claude and Antigravity use their
+native macOS keychain formats. Saved logins and login backups stay in the keychain. No
+custom encrypted vault is created. Profile directories are never replaced. A running
+agent process can keep the login it loaded; the switched account applies to the next
+launch.
 
-Antigravity CLI quotas are not queried yet; unavailable quota values remain unknown.
-Antigravity IDE switching is not included. Gemini CLI is not a supported host.
-Claude Console profiles, cloud-provider credentials, and Codex keyring-only logins are outside this
-first release. Windows and Linux adapters will need separate validation.
+Antigravity CLI quotas are not queried yet. Antigravity IDE switching and Gemini CLI are
+not included. Claude Console profiles, cloud-provider credentials, and Codex
+keyring-only logins are outside this release. Windows and Linux adapters need separate
+validation.
 
 The adapters use the native account formats described in the
 [Codex app-server documentation](https://learn.chatgpt.com/docs/app-server) and
@@ -386,13 +420,35 @@ The adapters use the native account formats described in the
 Antigravity's native storage is described in its
 [authentication documentation](https://github.com/google-antigravity/antigravity-cli#authentication).
 
+### macOS keychain access
+
+Keychain lock and process security-session access are separate conditions.
+`keychain_locked` reports a confirmed locked keychain. Run
+`security unlock-keychain ~/Library/Keychains/login.keychain-db` and enter the
+password only at its prompt.
+
+`keychain_no_gui_session` reports that the calling macOS security session cannot
+show an approval window. Use a normal Mac Terminal, or run that account with
+`--isolated`. A Herdr server started in a remote session keeps that session even
+after a local client attaches; new panes inherit it. Reloading shell settings or
+clearing SSH variables does not change the macOS security session. Do not stop an
+existing Herdr server or its agents without the user's explicit instruction.
+
+If native status cannot identify the condition, `has` reports
+`keychain_interaction_not_allowed` without claiming the keychain is locked. Denied
+access and missing items have separate guidance. Existing access controls are kept.
+
+`has list claude --usage` keeps the account rows when keychain access fails, shows
+usage and the shared home as unknown, and prints one recovery line. Switching fails
+before any write when its preflight reads are blocked.
+
 ## 🛠️ Development
 
 <details>
 <summary>Build and validate from source</summary>
 
-Source code is TypeScript. The CLI package contains one executable, both READMEs, package metadata,
-and the license. No private profile data or development dependencies are shipped.
+Source code is TypeScript. The CLI package contains one executable, both READMEs, package
+metadata, and the license. No private profile data or development dependencies are shipped.
 The skill archive contains `has/SKILL.md`, its UI metadata, and the license.
 
 ```bash
@@ -406,42 +462,12 @@ bun add --global --ignore-scripts /tmp/ha-switch-local.tgz
 For release artifacts, `bun run pack:release /tmp/ha-switch-release-0.1.0` writes
 `ha-switch-0.1.0.tgz`, `has-skill-0.1.0.tgz`, and `SHA256SUMS`.
 It builds in temporary directories and refuses to replace existing release files.
-`bun scripts/build.ts /tmp/ha-switch.tgz` still builds only the CLI package.
+
+Tests use synthetic homes, fake binaries, and fake keychains; they never switch a real
+login.
 
 </details>
 
 [^bun-add]: [Bun's global and tarball installation documentation](https://bun.sh/docs/pm/cli/add).
 [^codex-skills]: [Codex skill directories and invocation](https://learn.chatgpt.com/docs/build-skills).
 [^claude-skills]: [Claude Code skill installation and invocation](https://code.claude.com/docs/en/skills).
-
-`has restore c --pool NAME` restores the shortcut Claude home.
-`has restore claude --pool NAME` keeps restoring the configured pool home.
-
-A launch is ready when the new session has loaded its selected login. Then the
-next terminal may be started; existing sessions may stay open. Do not wait for
-them to exit, and do not overlap the switch or startup steps.
-
-## macOS keychain access
-
-Keychain lock and process security-session access are separate conditions.
-`keychain_locked` reports a confirmed locked keychain. Run
-`security unlock-keychain ~/Library/Keychains/login.keychain-db` and enter the
-password only at its prompt.
-
-`keychain_no_gui_session` reports that the calling macOS security session cannot
-show an approval window. Use a normal Mac Terminal. A Herdr server started in a
-remote session keeps that session even after a local client attaches; new panes
-inherit it. Reloading shell settings with `source` or clearing SSH environment
-variables does not change the macOS security session. Do not stop an existing
-Herdr server or its agents without the user's explicit instruction.
-
-If native status cannot identify the condition, report
-`keychain_interaction_not_allowed` without claiming that the keychain is locked.
-Denied access and missing items have separate guidance. Keep existing access
-controls; do not grant unrestricted access or export credentials.
-
-`has -h c --usage` keeps configured account labels visible when keychain access fails,
-shows usage and current selection as unknown, and prints one recovery message.
-Previous usage is not cached, so no last confirmed balance is available while
-credential access is blocked. Missing entries show signed-out state. Switching
-still fails before credential writes when preflight reads are blocked.
